@@ -1,0 +1,1 @@
+# Task 3 uses only the Python standard library; provider adapters may add pinned dependencies later.

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="World Memory">
+  <circle cx="32" cy="32" r="27" fill="#171923" stroke="#8ED6C4" stroke-width="3"/>
+  <path d="M18 29c7-10 21-10 28 0M18 35c7 10 21 10 28 0M32 12c-7 8-7 32 0 40M32 12c7 8 7 32 0 40" fill="none" stroke="#8ED6C4" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M24 32l5 5 11-12" fill="none" stroke="#F4C95D" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

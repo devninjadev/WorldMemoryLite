@@ -1,0 +1,2 @@
+ID,Feed URL,Feed Link,Feed Title,Feed Description,Feed Icon,Title,Link,Description,Image,Plain Description,Author,Date
+sample-1,https://rss.app/feeds/sample.csv,https://example.com/feed,Sample Source,Fixture source,,  Market   headline  ,https://Example.com/article?utm_source=rss&id=7,Description fallback,,Plain fixture summary,Fixture Author,"Fri, 14 Aug 2026 12:00:00 +0000"
