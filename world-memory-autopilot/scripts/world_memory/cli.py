@@ -19,10 +19,16 @@ from typing import Callable, Sequence, TextIO
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from .bootstrap import build_bootstrap_plan, render_scheduled_prompt
+from .discovery import resolve_registry_discovery
 from .feed import FEEDS, FeedItem, FeedOutcome, FeedSpec, normalize_feed_summary
 from .llm_plan import validate_llm_plan
-from .market import MarketSnapshot, ProviderResult, combine_market_results
+from .market import MarketSnapshot
 from .notion_layout import DATABASE_SCHEMAS, bootstrap_manifest
+from .plugin_market import (
+    assess_market_observation,
+    build_plugin_market_plan,
+    collect_planned_market_observations,
+)
 from .registry import Registry, normalize_uuid, validate_registry
 from .windows import (
     ReportDecision,
@@ -40,6 +46,7 @@ from .views import (
 
 _COMMANDS = (
     "validate-registry",
+    "resolve-registry-discovery",
     "schema",
     "bootstrap-plan",
     "window",
@@ -49,6 +56,7 @@ _COMMANDS = (
     "render-scheduled-prompt",
     "normalize-feed",
     "market-data-plan",
+    "validate-market-observation",
     "collect-market-data",
     "verify-live",
 )
@@ -105,6 +113,7 @@ def _parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
     help_text = {
         "validate-registry": "normalize the embedded native registry",
+        "resolve-registry-discovery": "validate one-shot Notion recovery observations",
         "schema": "return an independent logical schema manifest",
         "bootstrap-plan": "describe a finite fresh setup",
         "window": "resolve a supplied report-window observation",
@@ -114,6 +123,7 @@ def _parser() -> argparse.ArgumentParser:
         "render-scheduled-prompt": "render the self-contained schedule prompt",
         "normalize-feed": "normalize one supplied RSS.app CSV payload",
         "market-data-plan": "describe independent market observations",
+        "validate-market-observation": "validate one supplied market observation",
         "collect-market-data": "combine supplied provider observations",
         "verify-live": "validate supplied canary evidence only",
     }
@@ -199,6 +209,7 @@ def main(
 def _dispatch(command: str, value: dict[str, object]) -> dict[str, object]:
     handlers: dict[str, Callable[[dict[str, object]], dict[str, object]]] = {
         "validate-registry": validate_registry,
+        "resolve-registry-discovery": resolve_registry_discovery,
         "schema": _schema,
         "bootstrap-plan": _bootstrap_plan,
         "window": _window,
@@ -208,6 +219,7 @@ def _dispatch(command: str, value: dict[str, object]) -> dict[str, object]:
         "render-scheduled-prompt": _render_scheduled_prompt,
         "normalize-feed": _normalize_feed,
         "market-data-plan": _market_data_plan,
+        "validate-market-observation": assess_market_observation,
         "collect-market-data": _collect_market_data,
         "verify-live": _verify_live,
     }
@@ -357,58 +369,27 @@ def _normalize_feed(value: dict[str, object]) -> dict[str, object]:
 
 
 def _market_data_plan(value: dict[str, object]) -> dict[str, object]:
-    _require_exact_keys(value, frozenset({"registry"}), "market-data-plan input")
+    _require_exact_keys(
+        value,
+        frozenset({"registry", "toolAccess"}),
+        "market-data-plan input",
+    )
     registry = Registry.from_mapping(value["registry"])
     vix_source = registry.market_sources.vix_spreadsheet
-    return {
-        "mode": "caller-supplied-observations",
-        "providers": [
-            {"id": "google-finance", "independent": True},
-            {
-                "id": "spreadsheet",
-                "independent": True,
-                "publicCsvUrl": vix_source.public_csv_url,
-                "expectedSymbols": list(vix_source.expected_symbols),
-            },
-            {"id": "cboe", "independent": True},
-        ],
-        "combination": {
-            "providerOrder": "input-order",
-            "valueConflict": "first-successful-provider-wins",
-            "failurePolicy": "preserve-independent-successes",
-        },
-        "externalIo": False,
-    }
+    return build_plugin_market_plan(
+        tool_access=value["toolAccess"],
+        vix_public_csv_url=vix_source.public_csv_url,
+        vix_symbols=vix_source.expected_symbols,
+    )
 
 
 def _collect_market_data(value: dict[str, object]) -> dict[str, object]:
-    _require_exact_keys(value, frozenset({"providers"}), "collect-market-data input")
-    providers = value["providers"]
-    if type(providers) is not list:
-        raise ValueError("providers must be a list")
-    results: list[ProviderResult] = []
-    for item in providers:
-        if type(item) is not dict:
-            raise ValueError("provider result must be an object")
-        _require_exact_keys(
-            item,
-            frozenset({"provider", "status", "values", "error", "stage"}),
-            "provider result",
-        )
-        provider = _string(item["provider"], "provider")
-        status = _string(item["status"], "status")
-        if status not in {"ok", "error", "not-attempted"}:
-            raise ValueError("status must be ok, error, or not-attempted")
-        if type(item["values"]) is not dict:
-            raise ValueError("values must be an object")
-        error = item["error"]
-        stage = item["stage"]
-        if type(error) is not str or type(stage) is not str:
-            raise ValueError("error and stage must be strings")
-        results.append(
-            ProviderResult(provider, status, dict(item["values"]), error, stage)
-        )
-    return _market_snapshot_mapping(combine_market_results(results))
+    _require_exact_keys(
+        value, frozenset({"plan", "outcomes"}), "collect-market-data input"
+    )
+    return collect_planned_market_observations(
+        plan=value["plan"], outcomes=value["outcomes"]
+    )
 
 
 def _verify_live(value: dict[str, object]) -> dict[str, object]:

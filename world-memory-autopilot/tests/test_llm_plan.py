@@ -42,15 +42,25 @@ REPORT_MARKDOWN = """# 🌍 변동성은 낮지만 경계는 남아 있다
 
 ## Key Takeaway
 
-핵심 결론.
+- 주식시장의 방향은 견조하지만 에너지발 물가 위험이 남아 있어 전체 환경은 엇갈린다.
+- 낮은 단기 변동성은 즉각적인 공포가 제한적이라는 근거지만 중기 위험까지 사라졌다는 뜻은 아니다.
+- 유가와 장기금리가 함께 오르면 미국 성장주와 한국 수입물가에 부담이 전해질 수 있다.
 
 ## 시장 현황
 
-시장 현황.
+S&P 500은 높은 수준을 유지했고 단기 변동성은 낮았다. 위험선호가 급격히 꺾였다는 가격 증거는 아직 없다.
+
+반면 원유 가격은 지정학적 공급 우려를 반영해 상승했다. 주식과 에너지가 서로 다른 위험 신호를 보내는 혼합 국면이다.
+
+유가 상승이 장기금리와 기대인플레이션으로 이어지면 미국 성장주와 한국의 수입물가에 부담이 전해질 수 있다. 아직 그 전이는 가격에서 뚜렷하게 확인되지 않았다.
 
 ## 중장기 맥락
 
-중장기 맥락.
+이전 보고서의 낮은 단기 공포 판단은 유지된다. 다만 에너지 위험이 더해져 위험선호의 질은 약해졌다.
+
+공급 차질이 현실화되면 유가, 기대인플레이션, 장기금리 순으로 충격이 누적될 수 있다. 공급 차질 없이 발언과 제재에 머물면 영향은 제한될 가능성이 높다.
+
+다음 보고서에서는 원유 상승의 지속성과 장기금리 반응을 함께 확인해야 한다. 둘 중 하나가 되돌려지면 현재의 경계 판단도 약해진다.
 
 ## 주요 지표들
 
@@ -67,6 +77,37 @@ REPORT_MARKDOWN = """# 🌍 변동성은 낮지만 경계는 남아 있다
 ## 출처·데이터 안내
 
 없음."""
+OBSERVED_FAILURE_MARKDOWN = """# 유가는 올랐지만 주식시장의 공포는 번지지 않았다
+
+## Key Takeaway
+
+에너지 가격은 지정학 위험을 반영하기 시작했지만 금융시장은 아직 이를 국지적 충격으로 보는 모습이다.
+
+## 시장 현황
+
+- S&P 500은 높은 수준을 유지했다.
+- VIX 곡선은 우상향했다.
+- WTI와 브렌트유는 상승했다.
+
+## 중장기 맥락
+
+현재 시장은 에너지 인플레이션 위험과 낮은 주식 변동성을 동시에 가격에 담고 있다.
+
+## 주요 지표들
+
+- S&P 500과 VIX
+
+## 지켜봐야 할 것들
+
+- 유가와 장기금리
+
+## 관심을 가져볼 만한 이슈들
+
+- 공급망 정책
+
+## 출처·데이터 안내
+
+공개 시장 자료."""
 V011_REPORT_MARKDOWN = """# 한눈에 보기
 
 요약.
@@ -176,6 +217,16 @@ VALID = {
 }
 
 
+def replace_report_section(markdown: str, heading: str, replacement: str) -> str:
+    """Replace one exact H2 body in a test fixture without production helpers."""
+
+    start = markdown.index(f"{heading}\n") + len(heading) + 1
+    next_heading = markdown.find("\n## ", start)
+    if next_heading < 0:
+        next_heading = len(markdown)
+    return markdown[:start] + f"\n{replacement.strip()}\n" + markdown[next_heading:]
+
+
 class LlmPlanValidationTests(unittest.TestCase):
     def test_exports_schema_compatible_enums(self) -> None:
         self.assertIn("reframed", CHANGE_TYPES)
@@ -224,6 +275,164 @@ class LlmPlanValidationTests(unittest.TestCase):
                 "## 출처·데이터 안내",
             ],
         )
+
+    def test_rejects_observed_prose_takeaway_list_market_and_shallow_context(self) -> None:
+        broken = copy.deepcopy(VALID)
+        broken["report"]["markdown"] = OBSERVED_FAILURE_MARKDOWN
+
+        with self.assertRaisesRegex(ValueError, "Key Takeaway"):
+            validate_llm_plan(
+                broken,
+                known_story_locators={STORY_ID},
+                evidence_item_ids={"item-1"},
+                expected_report_type="world-memory",
+            )
+
+    def test_key_takeaway_requires_three_to_five_unordered_items(self) -> None:
+        cases = {
+            "two-items": "- 첫째 판단\n- 둘째 판단",
+            "six-items": "\n".join(f"- 판단 {index}" for index in range(1, 7)),
+            "ordered-items": "1. 첫째 판단\n2. 둘째 판단\n3. 셋째 판단",
+            "prose": "판단과 근거와 영향을 한 문단에 함께 쓴다.",
+        }
+
+        for name, takeaway in cases.items():
+            with self.subTest(name=name):
+                broken = copy.deepcopy(VALID)
+                broken["report"]["markdown"] = replace_report_section(
+                    REPORT_MARKDOWN, "## Key Takeaway", takeaway
+                )
+                with self.assertRaisesRegex(ValueError, "Key Takeaway"):
+                    validate_llm_plan(
+                        broken,
+                        known_story_locators={STORY_ID},
+                        evidence_item_ids={"item-1"},
+                        expected_report_type="world-memory",
+                    )
+
+    def test_report_type_controls_narrative_paragraph_minimums(self) -> None:
+        two_paragraphs = (
+            "현재 시장은 위험선호와 공급 충격 우려가 공존한다.\n\n"
+            "다음 확인점은 유가 상승이 장기금리로 전이되는지 여부다."
+        )
+        markdown = replace_report_section(
+            REPORT_MARKDOWN, "## 시장 현황", two_paragraphs
+        )
+        markdown = replace_report_section(
+            markdown, "## 중장기 맥락", two_paragraphs
+        )
+
+        briefing = copy.deepcopy(VALID)
+        briefing["report"]["type"] = "briefing"
+        briefing["report"]["markdown"] = markdown
+        validate_llm_plan(
+            briefing,
+            known_story_locators={STORY_ID},
+            evidence_item_ids={"item-1"},
+            expected_report_type="briefing",
+        )
+
+        world_memory = copy.deepcopy(VALID)
+        world_memory["report"]["markdown"] = markdown
+        with self.assertRaisesRegex(ValueError, "at least 3 prose paragraphs"):
+            validate_llm_plan(
+                world_memory,
+                known_story_locators={STORY_ID},
+                evidence_item_ids={"item-1"},
+                expected_report_type="world-memory",
+            )
+
+    def test_briefing_rejects_one_narrative_paragraph(self) -> None:
+        broken = copy.deepcopy(VALID)
+        broken["report"]["type"] = "briefing"
+        broken["report"]["markdown"] = replace_report_section(
+            REPORT_MARKDOWN,
+            "## 중장기 맥락",
+            "현재 판단과 다음 확인점을 한 문단에 압축했다.",
+        )
+
+        with self.assertRaisesRegex(ValueError, "at least 2 prose paragraphs"):
+            validate_llm_plan(
+                broken,
+                known_story_locators={STORY_ID},
+                evidence_item_ids={"item-1"},
+                expected_report_type="briefing",
+            )
+
+    def test_narrative_sections_reject_top_level_lists(self) -> None:
+        cases = {
+            "unordered-market": (
+                "## 시장 현황",
+                "- 주가는 견조하다.\n- 유가는 상승했다.\n- 전이는 아직 제한적이다.",
+            ),
+            "ordered-context": (
+                "## 중장기 맥락",
+                "1. 기존 판단은 유지된다.\n2. 공급 충격을 확인한다.\n3. 금리 전이를 본다.",
+            ),
+        }
+
+        for name, (heading, body) in cases.items():
+            with self.subTest(name=name):
+                broken = copy.deepcopy(VALID)
+                broken["report"]["markdown"] = replace_report_section(
+                    REPORT_MARKDOWN, heading, body
+                )
+                with self.assertRaisesRegex(ValueError, "must use prose paragraphs"):
+                    validate_llm_plan(
+                        broken,
+                        known_story_locators={STORY_ID},
+                        evidence_item_ids={"item-1"},
+                        expected_report_type="world-memory",
+                    )
+
+    def test_narrative_sections_have_no_maximum_and_ignore_code_markers(self) -> None:
+        seven_paragraphs = "\n\n".join(
+            f"문단 {index}은 서로 다른 증거 역할을 설명한다."
+            for index in range(1, 8)
+        )
+        seven_paragraphs += (
+            "\n\n```text\n- 코드 안 목록은 산문 형식 위반이 아니다.\n```"
+            "\n\n    1. 들여쓴 코드도 목록으로 계산하지 않는다."
+        )
+        markdown = replace_report_section(
+            REPORT_MARKDOWN, "## 시장 현황", seven_paragraphs
+        )
+        markdown = replace_report_section(
+            markdown,
+            "## 중장기 맥락",
+            "S&P 500의 위험-보상은 엇갈린다. 2026년 수치는 문장이지 목록이 아니다.\n\n"
+            "장기금리 전이는 아직 확인되지 않았다.\n\n"
+            "다음 보고서에서 유가와 금리를 함께 점검한다.",
+        )
+
+        accepted = copy.deepcopy(VALID)
+        accepted["report"]["markdown"] = markdown
+        result = validate_llm_plan(
+            accepted,
+            known_story_locators={STORY_ID},
+            evidence_item_ids={"item-1"},
+            expected_report_type="world-memory",
+        )
+        self.assertEqual(result["report"]["markdown"], markdown)
+
+    def test_key_takeaway_ignores_list_markers_inside_code(self) -> None:
+        takeaway = (
+            "- 첫째 판단\n- 둘째 판단\n- 셋째 판단\n\n"
+            "```text\n- 코드 안 항목은 네 번째 판단이 아니다.\n```\n\n"
+            "    - 들여쓴 코드 안 항목도 판단이 아니다."
+        )
+        accepted = copy.deepcopy(VALID)
+        accepted["report"]["markdown"] = replace_report_section(
+            REPORT_MARKDOWN, "## Key Takeaway", takeaway
+        )
+
+        result = validate_llm_plan(
+            accepted,
+            known_story_locators={STORY_ID},
+            evidence_item_ids={"item-1"},
+            expected_report_type="world-memory",
+        )
+        self.assertEqual(result["report"]["markdown"], accepted["report"]["markdown"])
 
     def test_rejects_missing_duplicated_reordered_or_legacy_report_layout(self) -> None:
         missing = REPORT_MARKDOWN.replace("## 출처·데이터 안내", "")

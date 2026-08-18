@@ -56,6 +56,23 @@ class MarketAggregationTests(unittest.TestCase):
         self.assertEqual(snapshot.status, "partial")
         self.assertEqual(snapshot.values, {"USD/KRW": 1387.5})
 
+    def test_bounded_provider_error_codes_survive_without_raw_detail(self) -> None:
+        snapshot = combine_market_results(
+            (
+                ProviderResult(
+                    "alpaca", "error", {}, "premium-feed-required", "fetch"
+                ),
+                ProviderResult("wolfram", "error", {}, "raw secret detail", "parse"),
+            )
+        )
+        self.assertEqual(
+            snapshot.gaps,
+            (
+                "alpaca: premium-feed-required",
+                "wolfram: market_provider_error",
+            ),
+        )
+
     def test_all_market_providers_can_be_unavailable_without_exception(self) -> None:
         snapshot = combine_market_results((
             ProviderResult("google-finance", "error", {}, "timeout", "fetch"),
@@ -89,6 +106,57 @@ class MarketAggregationTests(unittest.TestCase):
             ),
         )
 
+    def test_complete_wolfram_treasury_short_circuits_fallbacks_truthfully(self) -> None:
+        snapshot = combine_market_results((
+            ProviderResult(
+                "wolfram-language",
+                "ok",
+                {
+                    "UST.2Y": 3.61,
+                    "UST.5Y": 3.74,
+                    "UST.10Y": 4.02,
+                    "UST.30Y": 4.61,
+                },
+                "",
+            ),
+            ProviderResult("wolfram-alpha", "not-attempted", {}, ""),
+            ProviderResult("treasury-csv", "not-attempted", {}, ""),
+            ProviderResult("treasury-xml", "not-attempted", {}, ""),
+        ))
+
+        self.assertEqual(snapshot.status, "ok")
+        self.assertEqual(snapshot.gaps, ())
+        self.assertEqual(
+            tuple(result.status for result in snapshot.providers),
+            ("ok", "not-attempted", "not-attempted", "not-attempted"),
+        )
+
+    def test_partial_wolfram_vix_preserves_components_and_fallback_fills_only_gaps(self) -> None:
+        snapshot = combine_market_results((
+            ProviderResult(
+                "wolfram-language",
+                "partial",
+                {"VIX9D": 15.2, "VIX": 16.4},
+                "market_provider_partial",
+            ),
+            ProviderResult(
+                "cboe",
+                "ok",
+                {"VIX9D": 99.0, "VIX": 99.0, "VIX3M": 17.1, "VIX6M": 18.0},
+                "",
+            ),
+        ))
+
+        self.assertEqual(snapshot.status, "partial")
+        self.assertEqual(
+            snapshot.values,
+            {"VIX9D": 15.2, "VIX": 16.4, "VIX3M": 17.1, "VIX6M": 18.0},
+        )
+        self.assertEqual(
+            snapshot.gaps,
+            ("wolfram-language: market_provider_partial",),
+        )
+
     def test_malformed_status_stage_or_value_combinations_fail_closed(self) -> None:
         malformed = (
             ProviderResult("provider", "unknown", {}, ""),
@@ -102,6 +170,16 @@ class MarketAggregationTests(unittest.TestCase):
             ProviderResult("provider", "not-attempted", {"VIX": 14.58}, ""),
             ProviderResult("provider", "not-attempted", {}, "raw detail"),
             ProviderResult("provider", "not-attempted", {}, "", "fetch"),
+            ProviderResult("provider", "partial", {}, "market_provider_partial"),
+            ProviderResult("provider", "partial", {"VIX": 14.58}, ""),
+            ProviderResult("provider", "partial", {"VIX": 14.58}, "raw detail"),
+            ProviderResult(
+                "provider",
+                "partial",
+                {"VIX": 14.58},
+                "market_provider_partial",
+                "parse",
+            ),
         )
         for result in malformed:
             with self.subTest(result=result), self.assertRaises(ValueError):

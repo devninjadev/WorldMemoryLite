@@ -24,18 +24,22 @@ from world_memory.windows import (
 from world_memory.workflow import WriteOutcome, build_user_result, resolve_write_response
 
 from tests.test_cli import (
+    MARKET_TOOL_ACCESS,
     REGISTRY,
     STORY_ID,
     TOOL_ACCESS,
+    VALID_SPY_PAYLOAD,
     VIX_PUBLIC_CSV_URL,
     VIX_SYMBOLS,
     WORKSPACE_ID,
+    registry_discovery_input,
     run_cli,
     schema_projections,
     view_projections,
 )
 from tests.test_llm_plan import VALID as _CLUSTERED_PLAN
 from tests.test_notion_payloads import DECISION, NOW, REGISTRY as REGISTRY_OBJECT
+from tests.test_plugin_market import _bind_structured_payload
 
 
 PACKAGE = Path(__file__).resolve().parents[1]
@@ -50,6 +54,70 @@ REFERENCE_PATHS = {
 CLUSTERED_PLAN = copy.deepcopy(_CLUSTERED_PLAN)
 CLUSTERED_PLAN["storyDecisions"][0]["storyLocator"] = STORY_ID
 CLUSTERED_PLAN["evidenceClusters"][0]["storyLocators"] = [STORY_ID]
+
+
+def _valid_collect_market_data_input() -> dict[str, object]:
+    plan_result = run_cli(
+        "market-data-plan",
+        "-",
+        stdin=json.dumps({"registry": REGISTRY, "toolAccess": MARKET_TOOL_ACCESS}),
+    )
+    observation_result = run_cli(
+        "validate-market-observation",
+        "-",
+        stdin=json.dumps(VALID_SPY_PAYLOAD),
+    )
+    if plan_result.returncode or observation_result.returncode:
+        raise AssertionError("market fixture precondition failed")
+    plan = json.loads(plan_result.stdout)
+    observation = json.loads(observation_result.stdout)["observation"]
+    stable_key = "equity.current-price.SPY"
+    attempts = []
+    for provider in plan["capabilities"]["equity-current-price"]["providers"]:
+        if provider == "alpaca":
+            attempts.append(
+                {
+                    "provider": provider,
+                    "status": "error",
+                    "values": {},
+                    "error": "provider-no-result",
+                    "stage": "fetch",
+                    "validationEnvelope": None,
+                }
+            )
+        elif provider == "wolfram-language":
+            attempts.append(
+                {
+                    "provider": provider,
+                    "status": "ok",
+                    "values": {stable_key: observation},
+                    "error": "",
+                    "stage": "",
+                    "validationEnvelope": VALID_SPY_PAYLOAD,
+                }
+            )
+        else:
+            attempts.append(
+                {
+                    "provider": provider,
+                    "status": "not-attempted",
+                    "values": {},
+                    "error": "",
+                    "stage": "",
+                    "validationEnvelope": None,
+                }
+            )
+    return {
+        "plan": plan,
+        "outcomes": [
+            {
+                "capability": "equity-current-price",
+                "request": VALID_SPY_PAYLOAD["request"],
+                "stableKey": stable_key,
+                "attempts": attempts,
+            }
+        ],
+    }
 
 
 def _read(path: Path) -> str:
@@ -148,6 +216,17 @@ def _contract_rows(text: str) -> dict[str, str]:
     return {row[0]: row[1] for row in table[2:]}
 
 
+def _json_block_after(text: str, heading: str) -> object:
+    match = re.search(
+        rf"{re.escape(heading)}\n\n```json\n(?P<body>.*?)\n```",
+        text,
+        flags=re.DOTALL,
+    )
+    if match is None:
+        raise AssertionError(f"missing JSON block after {heading}")
+    return json.loads(match.group("body"))
+
+
 def _documented_cli_rows() -> dict[str, tuple[str, str, str]]:
     rows: dict[str, tuple[str, str, str]] = {}
     for owner, path in REFERENCE_PATHS.items():
@@ -175,7 +254,7 @@ class SkillEntrypointTests(unittest.TestCase):
         )
         self.assertTrue(frontmatter["description"].startswith("Use when "))
         self.assertLess(len(raw), 1024)
-        self.assertEqual(skill.count("Version: `0.12.0`"), 1)
+        self.assertEqual(skill.count("Version: `0.14.0`"), 1)
 
     def test_entrypoint_routes_each_detailed_concern_once(self) -> None:
         skill = _read(SKILL_PATH)
@@ -205,6 +284,7 @@ class SkillEntrypointTests(unittest.TestCase):
             "story-due-confirmed-change": "collection-and-analysis.md",
             "setup-separation": "deployment.md",
             "cboe-independence": "market-data.md",
+            "binance-proxy-unchanged": "market-data.md",
         }
         observed: dict[str, str] = {}
         for document, text in documents.items():
@@ -254,6 +334,17 @@ class SkillEntrypointTests(unittest.TestCase):
 
 
 class LayoutAndSourceDocumentationTests(unittest.TestCase):
+    def test_readme_marks_connectors_optional_and_live_acceptance_unverified(self) -> None:
+        readme = _read(WORKTREE / "README.md")
+        for required in (
+            "Alpaca and Wolfram are optional connectors",
+            "existing official and public fallbacks remain available",
+            "does not prove live Alpaca, Wolfram, Workspace, or Notion acceptance",
+            "keeps only the newly built versioned World Memory ZIP in that output directory",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, readme)
+
     def test_structured_cli_inputs_have_closed_nested_shapes(self) -> None:
         collection = _table_after(
             _read(REFERENCE_PATHS["collection-and-analysis"]),
@@ -286,10 +377,335 @@ class LayoutAndSourceDocumentationTests(unittest.TestCase):
         self.assertEqual(
             {row[0]: row[1] for row in market[2:]},
             {
-                "collect-market-data.providers[]": "exact keys provider,status,values,error,stage; provider:nonempty string; status:ok, error, or not-attempted; ok has nonempty values plus empty error/stage; error has empty values, safe error, and stage fetch or parse; not-attempted has empty values/error/stage",
-                "values.<observation>": "canonical exact keys value,instrument,sessionBasis,observedAt,currency,unit,source,freshness; value:number; observedAt:aware ISO timestamp; currency:string or null; all other fields:nonempty strings",
+                "market-data-plan": "exact keys registry,toolAccess; registry is the validated notion-native-v2 object and toolAccess is the current response",
+                "market-data-plan.toolAccess": "exact boolean keys alpacaMarketData,alpacaOptions,alpacaCalendar,wolframLanguage,wolframAlpha; each value reflects current tool access rather than remembered availability",
+                "market-data-plan.attempts[]": "exact keys provider,requiredToolAccess,invocation; invocation has exact keys kind,tool,action,method,endpointTemplate,requestArguments,evidenceFormat,rawQueryPersistence,sourceLocatorPersistence and is directly executable without inferring an operation from provider",
+                "validate-market-observation": "exact keys request,candidate,evidence,normalizationAttempt; normalizationAttempt is 1 or 2",
+                "request": "one of the six exact capability shapes below; cutoff is aware; current price also has maximumAgeSeconds; date windows satisfy startDate<=endDate<=cutoff; instruments use exact keys symbol,currency,region,assetClass",
+                "candidate common": "exact keys schemaVersion,capability,provider,sourceLocator,fetchedAt,completeness,evidenceBindings plus only the capability fields below; provider is a closed plan provider; schemaVersion is 1.0; completeness is complete or partial",
+                "sourceLocator": "either exact keys kind,url with kind=url and evidence-bound provider-host URL without credentials, key/token/credential/signature/access-key/security-token query keys including signed vendor prefixes, or fragment; or exact keys kind,tool,queryDescriptor with kind=provider-query and matching Wolfram provider",
+                "evidenceBindings[]": "structured evidence uses exact keys field,evidenceId,evidencePath with the same exact scalar field path; text evidence uses exact keys field,evidenceId,textSpan,excerpt with an exact field-level source span",
+                "evidence[]": "exact keys evidenceId,format,content; format is structured or text; content is the corresponding tool result bound only to that evidenceId",
+                "collect-market-data": "exact keys plan,outcomes; plan is the unchanged current market-data-plan response and outcomes is a nonempty list of complete planned chains",
+                "collect-market-data.outcomes[]": "exact keys capability,request,stableKey,attempts; capability is validatorSupported and in plan and may repeat only for a distinct request and stableKey; request maps to validatorCapability; attempts cover every planned provider once in order; any economic outcomes cover exactly the five scheduledSeriesIds",
+                "collect-market-data.attempts[]": "exact keys provider,status,values,error,stage,validationEnvelope; complete forces every later row to not-attempted; partial or error permits the next attempt; ok or partial contains exactly one normalized observation at stableKey and the original accepted validation envelope; error or not-attempted uses validationEnvelope null",
+                "values.<stableKey>": "atomic capabilities use one complete fallback observation instead of mixing a partial; VIX uses missing-only components with provider,sourceLocator,date,fetchedAt provenance per component; never a scalar or flattened pseudo-curve",
             },
         )
+
+    def test_generated_schedule_builds_a_real_current_access_plan_request(self) -> None:
+        """Catch a rendered JSON template that cannot cross the Task 1 boundary."""
+
+        prompt = render_scheduled_prompt(Registry.from_mapping(REGISTRY))
+        marker = "<market_data_plan_request_template>\n"
+        self.assertIn(marker, prompt)
+        self.assertNotIn("{registry:<", prompt)
+        self.assertIn(
+            "replace each null in toolAccess with the corresponding current observed boolean. Do not change any other key or value",
+            prompt,
+        )
+        template = json.loads(
+            prompt.split(marker, 1)[1].split(
+                "\n</market_data_plan_request_template>", 1
+            )[0]
+        )
+        self.assertEqual(set(template), {"registry", "toolAccess"})
+        self.assertEqual(template["registry"], REGISTRY)
+        self.assertEqual(
+            template["toolAccess"],
+            {
+                "alpacaMarketData": None,
+                "alpacaOptions": None,
+                "alpacaCalendar": None,
+                "wolframLanguage": None,
+                "wolframAlpha": None,
+            },
+        )
+        observed_access = {
+            "alpacaMarketData": True,
+            "alpacaOptions": False,
+            "alpacaCalendar": True,
+            "wolframLanguage": True,
+            "wolframAlpha": False,
+        }
+        for key, value in observed_access.items():
+            template["toolAccess"][key] = value
+
+        completed = run_cli("market-data-plan", "-", stdin=json.dumps(template))
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        plan = json.loads(completed.stdout)
+        self.assertEqual(
+            plan["capabilities"]["credit-risk-pair"]["providers"][:3],
+            ["alpaca", "wolfram-language", "existing-credit-risk"],
+        )
+        self.assertTrue(
+            plan["capabilities"]["credit-risk-pair"]["shortCircuitOnComplete"]
+        )
+
+    def test_documented_nested_validator_shapes_are_closed(self) -> None:
+        """Catch nested documentation that cannot define a Task 2 candidate."""
+
+        table = _table_after(
+            _read(REFERENCE_PATHS["market-data"]),
+            "## Nested validator shapes",
+        )
+        self.assertEqual(table[0], ["Value", "Exact closed shape and constraint"])
+        self.assertEqual(
+            {row[0]: row[1] for row in table[2:]},
+            {
+                "common candidate": "schemaVersion=1.0; capability equals request; provider is in the closed plan enum; sourceLocator as below; fetchedAt aware and not after cutoff; completeness complete or partial; evidenceBindings list; plus exactly one capability field set",
+                "URL sourceLocator": "exact keys kind,url; kind=url; provider-host HTTP(S) URL without userinfo, secret query key, or fragment; exact URL occurs in supplied evidence",
+                "provider-query sourceLocator": "exact keys kind,tool,queryDescriptor; kind=provider-query; tool Wolfram Language maps to provider wolfram-language or Wolfram Alpha maps to wolfram-alpha; descriptor exactly matches one deterministic format below",
+                "evidence[]": "nonempty list of exact keys evidenceId,format,content; evidenceId nonempty and unique; structured content is object or list; text content is string",
+                "evidenceBindings[]": "every non-null capability scalar plus fetchedAt has exactly one binding; structured rows use field,evidenceId,evidencePath with identical field/path and exact typed value; text rows use field,evidenceId,textSpan,excerpt whose exact source slice contains that field value and any maturity,component,or OHLC label; only currency fields treat USD,USDT,USDC as nominal 1:1 equivalents",
+                "request instrument": "exact keys symbol,currency,region,assetClass; every value nonempty string",
+                "candidate instrument": "exact keys symbol,currency,region,assetClass,exchange; requested symbol,currency,region,assetClass match exactly and USD remains the canonical output currency when source evidence says USDT or USDC; every value nonempty string",
+                "current price": "positive finite price; closed provider-specific valueBasis,marketScope,session; observedAt aware, not after cutoff, and within maximumAgeSeconds, or null only when completeness=partial",
+                "daily bars": "closed provider-specific valueBasis,marketScope,session; nonempty date-ascending rows inside startDate/endDate; positive finite OHLC; low <= open and close <= high; integer volume >= 0",
+                "bar row": "exact keys date,open,high,low,close,volume",
+                "pair series": "exactly two ordered members matching requested instruments; closed common currency,valueBasis,marketScope,session; both date sets are identical after caller intersection and contain at least minimumCommonDays",
+                "pair member": "exact keys instrument,rows; rows nonempty and date-ascending",
+                "pair row": "exact keys date,value; value positive finite; date inside startDate/endDate and not after cutoff",
+                "Treasury maturities": "nonempty subset of 3M,1Y,2Y,5Y,10Y,30Y with finite values; complete requires 2Y,5Y,10Y,30Y; country US; unit percent; valueBasis us-treasury-yield-curve-rate; date equals request and is not future",
+                "economic observations": "list length at least minimumHistory; exact seriesId or exact semanticIdentity; frequency and unit equal request; rows date-ascending inside startDate/endDate and not future",
+                "economic observation": "exact keys date,value; value finite",
+                "VIX components": "nonempty subset of VIX9D,VIX,VIX3M,VIX6M with positive finite values; complete requires all four; unit index-points; date equals request and is not future",
+            },
+        )
+
+    def test_documented_representative_validator_fixtures_execute(self) -> None:
+        """Catch representative documented candidates rejected by the real validator."""
+
+        market = _read(REFERENCE_PATHS["market-data"])
+        cases = (
+            ("### Current price validator fixture", "equity-current-price"),
+            ("### Daily bars validator fixture", "equity-daily-bars"),
+            ("### Treasury validator fixture", "treasury-yield-curve"),
+            ("### Economic series validator fixture", "economic-time-series"),
+        )
+        for heading, capability in cases:
+            with self.subTest(capability=capability):
+                fixture = _json_block_after(market, heading)
+                self.assertEqual(fixture["request"]["capability"], capability)
+                completed = run_cli(
+                    "validate-market-observation", "-", stdin=json.dumps(fixture)
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                response = json.loads(completed.stdout)
+                self.assertEqual(response["status"], "accepted")
+                self.assertEqual(response["observation"]["capability"], capability)
+
+    def test_documented_partial_observation_survives_real_validator_and_collector(self) -> None:
+        """Catch partial-to-error or normalized-observation-to-scalar projection."""
+
+        fixture = _json_block_after(
+            _read(REFERENCE_PATHS["market-data"]),
+            "### Partial validator fixture",
+        )
+        validated = run_cli(
+            "validate-market-observation", "-", stdin=json.dumps(fixture)
+        )
+        self.assertEqual(validated.returncode, 0, validated.stderr)
+        response = json.loads(validated.stdout)
+        self.assertEqual(response["status"], "accepted")
+        observation = response["observation"]
+        self.assertEqual(observation["completeness"], "partial")
+
+        plan = json.loads(
+            run_cli(
+                "market-data-plan",
+                "-",
+                stdin=json.dumps(
+                    {"registry": REGISTRY, "toolAccess": MARKET_TOOL_ACCESS}
+                ),
+            ).stdout
+        )
+        stable_key = "VIX.term-structure"
+        attempts = []
+        for index, provider in enumerate(
+            plan["capabilities"]["volatility-term-structure"]["providers"]
+        ):
+            if index == 0:
+                attempts.append(
+                    {
+                        "provider": provider,
+                        "status": "partial",
+                        "values": {stable_key: observation},
+                        "error": "market_provider_partial",
+                        "stage": "",
+                        "validationEnvelope": fixture,
+                    }
+                )
+            else:
+                attempts.append(
+                    {
+                        "provider": provider,
+                        "status": "error",
+                        "values": {},
+                        "error": "provider-no-result",
+                        "stage": "fetch",
+                        "validationEnvelope": None,
+                    }
+                )
+        collected = run_cli(
+            "collect-market-data",
+            "-",
+            stdin=json.dumps(
+                {
+                    "plan": plan,
+                    "outcomes": [
+                        {
+                            "capability": "volatility-term-structure",
+                            "request": fixture["request"],
+                            "stableKey": stable_key,
+                            "attempts": attempts,
+                        }
+                    ],
+                }
+            ),
+        )
+
+        self.assertEqual(collected.returncode, 0, collected.stderr)
+        snapshot = json.loads(collected.stdout)
+        self.assertEqual(snapshot["status"], "partial")
+        self.assertEqual(
+            snapshot["values"]["VIX.term-structure"]["components"]["VIX"]["level"],
+            observation["components"]["VIX"],
+        )
+        self.assertEqual(
+            snapshot["gaps"][0],
+            "volatility-term-structure/wolfram-language: market_provider_partial",
+        )
+
+    def test_documented_pair_requests_cross_the_real_validator_without_fill(self) -> None:
+        """Catch wrong pair identities, minima, descriptors, or fabricated dates."""
+
+        requests = _json_block_after(
+            _read(REFERENCE_PATHS["market-data"]),
+            "### Scheduled pair request fixtures",
+        )
+        cases = (
+            ("credit-risk-pair", ("HYG", "LQD"), 6),
+            ("market-breadth-pair", ("RSP", "SPY"), 21),
+        )
+        observed_trading_dates = (
+            "2026-07-17",
+            "2026-07-20",
+            "2026-07-21",
+            "2026-07-22",
+            "2026-07-23",
+            "2026-07-24",
+            "2026-07-27",
+            "2026-07-28",
+            "2026-07-29",
+            "2026-07-30",
+            "2026-07-31",
+            "2026-08-03",
+            "2026-08-04",
+            "2026-08-05",
+            "2026-08-06",
+            "2026-08-07",
+            "2026-08-10",
+            "2026-08-11",
+            "2026-08-12",
+            "2026-08-13",
+            "2026-08-14",
+        )
+        for task1_name, symbols, minimum in cases:
+            with self.subTest(task1_name=task1_name):
+                request = requests[task1_name]
+                self.assertEqual(request["capability"], "equity-pair-series")
+                self.assertEqual(
+                    tuple(item["symbol"] for item in request["instruments"]),
+                    symbols,
+                )
+                self.assertEqual(request["minimumCommonDays"], minimum)
+                dates = observed_trading_dates[-minimum:]
+                series = []
+                evidence_series = []
+                bindings = []
+                for index, instrument in enumerate(request["instruments"]):
+                    rows = [
+                        {"date": date, "value": 80.0 + index * 20 + row_index}
+                        for row_index, date in enumerate(dates)
+                    ]
+                    series.append(
+                        {
+                            "instrument": {**instrument, "exchange": "NYSE Arca"},
+                            "rows": rows,
+                        }
+                    )
+                    evidence_series.append({"rows": rows})
+                    bindings.append(
+                        {"field": f"series.{index}.rows", "evidenceId": "ev-pair"}
+                    )
+                descriptor = (
+                    f"equity-pair-series:{','.join(symbols)}:"
+                    f"{request['startDate']}:{request['endDate']}"
+                )
+                payload = {
+                    "request": request,
+                    "candidate": {
+                        "schemaVersion": "1.0",
+                        "capability": "equity-pair-series",
+                        "provider": "wolfram-language",
+                        "sourceLocator": {
+                            "kind": "provider-query",
+                            "tool": "Wolfram Language",
+                            "queryDescriptor": descriptor,
+                        },
+                        "fetchedAt": "2026-08-16T11:45:00Z",
+                        "completeness": "complete",
+                        "evidenceBindings": bindings,
+                        "currency": "USD",
+                        "valueBasis": "wolfram-daily-close",
+                        "marketScope": "provider-market",
+                        "session": "regular",
+                        "series": series,
+                    },
+                    "evidence": [
+                        {
+                            "evidenceId": "ev-pair",
+                            "format": "structured",
+                            "content": {"series": evidence_series},
+                        }
+                    ],
+                    "normalizationAttempt": 1,
+                }
+                _bind_structured_payload(payload, "ev-pair")
+                completed = run_cli(
+                    "validate-market-observation", "-", stdin=json.dumps(payload)
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertEqual(json.loads(completed.stdout)["status"], "accepted")
+
+    def test_market_reference_documents_executable_validation_boundaries(self) -> None:
+        """Catch docs that leave provider selection or evidence repair ambiguous."""
+
+        market = _read(REFERENCE_PATHS["market-data"])
+        collection = _read(REFERENCE_PATHS["collection-and-analysis"])
+        skill = _read(SKILL_PATH)
+
+        for required in (
+            "IEX versus SIP",
+            "Wolfram `Last` degradation",
+            "Treasury value-basis",
+            "entity validation",
+            "evidence binding",
+            "query descriptor",
+            "No Results Found",
+            "graph-only",
+            "at most one validation-guided repair",
+            "fetch only missing fields or components",
+            "do not mix providers, currencies, or value bases",
+            "temporary plugin inputs",
+        ):
+            with self.subTest(required=required):
+                self.assertTrue(
+                    required in market or required in collection or required in skill,
+                    required,
+                )
 
         deployment = _table_after(
             _read(REFERENCE_PATHS["deployment"]),
@@ -300,6 +716,10 @@ class LayoutAndSourceDocumentationTests(unittest.TestCase):
             {row[0]: row[1] for row in deployment[2:]},
             {
                 "bootstrap-plan.workspaceId": "UUID string",
+                "resolve-registry-discovery": "exact keys workspaceId,candidates; candidates is the bounded result of one exact-title Notion search plus exact candidate fetches",
+                "candidates[]": "exact keys pageId,url,title,marker,workspaceRoot,installation; installation is null for a non-v2 candidate or has exact keys databases,views for a v2 candidate",
+                "installation.databases": "exact keys collections,stories,storyChanges,reports; each has title,databaseUrl,parentPageId,dataSourceId,properties",
+                "installation.views": "exact keys reportsRecent,storiesCurrent; each has name,databaseUrl,viewId,dataSourceId,displayProperties,sorts",
                 "render-scheduled-prompt": "the exact Canonical registry object in notion-layout.md",
                 "verify-live.registry/workspaceId": "the exact Canonical registry plus the same workspace UUID",
                 "verify-live.toolAccess": "exact boolean keys fetchSelf,queryDataSources,fetchPages,createPages,updatePages; all true",
@@ -495,18 +915,28 @@ class LayoutAndSourceDocumentationTests(unittest.TestCase):
                 ),
                 "market-data-plan": (
                     "market-data",
-                    "registry",
-                    "independent provider collection plan",
+                    "registry,toolAccess",
+                    "capability-specific provider collection plan",
+                ),
+                "validate-market-observation": (
+                    "market-data",
+                    "request,candidate,evidence,normalizationAttempt",
+                    "validated evidence-bound market observation",
                 ),
                 "collect-market-data": (
                     "market-data",
-                    "providers",
-                    "combined supplied-provider snapshot",
+                    "plan,outcomes",
+                    "validated planned-provider snapshot",
                 ),
                 "bootstrap-plan": (
                     "deployment",
                     "workspaceId",
                     "finite fresh-install action plan",
+                ),
+                "resolve-registry-discovery": (
+                    "deployment",
+                    "workspaceId,candidates",
+                    "bounded read-only registry recovery result",
                 ),
                 "render-scheduled-prompt": (
                     "deployment",
@@ -529,6 +959,7 @@ class LayoutAndSourceDocumentationTests(unittest.TestCase):
             "validate-registry": REGISTRY,
             "schema": {},
             "bootstrap-plan": {"workspaceId": WORKSPACE_ID},
+            "resolve-registry-discovery": registry_discovery_input(),
             "window": {
                 "now": "2026-08-14T03:00:00Z",
                 "cadenceMinutes": 180,
@@ -553,29 +984,12 @@ class LayoutAndSourceDocumentationTests(unittest.TestCase):
             },
             "render-scheduled-prompt": REGISTRY,
             "normalize-feed": {"feedId": "first_squawk", "csv": csv_payload},
-            "market-data-plan": {"registry": REGISTRY},
-            "collect-market-data": {
-                "providers": [
-                    {
-                        "provider": "google-finance",
-                        "status": "ok",
-                        "values": {
-                            "SPY": {
-                                "value": 651.2,
-                                "instrument": "SPY",
-                                "sessionBasis": "current regular price",
-                                "observedAt": "2026-08-14T03:00:00Z",
-                                "currency": "USD",
-                                "unit": "price",
-                                "source": "Google Finance",
-                                "freshness": "fresh",
-                            }
-                        },
-                        "error": "",
-                        "stage": "",
-                    }
-                ]
+            "market-data-plan": {
+                "registry": REGISTRY,
+                "toolAccess": MARKET_TOOL_ACCESS,
             },
+            "validate-market-observation": VALID_SPY_PAYLOAD,
+            "collect-market-data": _valid_collect_market_data_input(),
             "verify-live": {
                 "registry": REGISTRY,
                 "workspaceId": WORKSPACE_ID,
@@ -600,12 +1014,13 @@ class LayoutAndSourceDocumentationTests(unittest.TestCase):
                     + "\n",
                 )
 
-    def test_ten_data_mapping_commands_execute_the_current_v2_contract(self) -> None:
+    def test_twelve_data_mapping_commands_execute_the_current_v2_contract(self) -> None:
         csv_payload = (PACKAGE / "tests" / "fixtures" / "rss-app-sample.csv").read_text(
             encoding="utf-8"
         )
         fixtures = {
             "validate-registry": REGISTRY,
+            "resolve-registry-discovery": registry_discovery_input(),
             "window": {
                 "now": "2026-08-14T03:00:00Z",
                 "cadenceMinutes": 180,
@@ -630,25 +1045,12 @@ class LayoutAndSourceDocumentationTests(unittest.TestCase):
             },
             "render-scheduled-prompt": REGISTRY,
             "normalize-feed": {"feedId": "first_squawk", "csv": csv_payload},
-            "market-data-plan": {"registry": REGISTRY},
-            "collect-market-data": {
-                "providers": [
-                    {
-                        "provider": "spreadsheet",
-                        "status": "ok",
-                        "values": {"VIX": 14.58},
-                        "error": "",
-                        "stage": "",
-                    },
-                    {
-                        "provider": "cboe",
-                        "status": "error",
-                        "values": {},
-                        "error": "untrusted detail",
-                        "stage": "parse",
-                    },
-                ]
+            "market-data-plan": {
+                "registry": REGISTRY,
+                "toolAccess": MARKET_TOOL_ACCESS,
             },
+            "validate-market-observation": VALID_SPY_PAYLOAD,
+            "collect-market-data": _valid_collect_market_data_input(),
             "verify-live": {
                 "registry": REGISTRY,
                 "workspaceId": WORKSPACE_ID,
@@ -657,7 +1059,7 @@ class LayoutAndSourceDocumentationTests(unittest.TestCase):
                 "viewProjections": view_projections(),
             },
         }
-        self.assertEqual(len(fixtures), 10)
+        self.assertEqual(len(fixtures), 12)
         for command, request in fixtures.items():
             with self.subTest(command=command):
                 completed = run_cli(command, "-", stdin=json.dumps(request))
@@ -710,7 +1112,7 @@ class LayoutAndSourceDocumentationTests(unittest.TestCase):
             self.assertIn(field, collection)
             self.assertIn(field, prompt)
         for truth_rule in (
-            "ok, error, or not-attempted",
+            "ok, partial, error, or not-attempted",
             "stage=fetch or stage=parse",
             "not-attempted creates no gap",
         ):
@@ -726,6 +1128,21 @@ class LayoutAndSourceDocumentationTests(unittest.TestCase):
         ):
             self.assertIn(section_id, prompt)
         self.assertIn("return only that link", prompt)
+
+    def test_reference_and_prompt_share_report_depth_without_an_llm_judge(self) -> None:
+        collection = _read(REFERENCE_PATHS["collection-and-analysis"])
+        prompt = render_scheduled_prompt(Registry.from_mapping(REGISTRY))
+        required = (
+            "Key Takeaway uses 3-5 unordered bullets",
+            "briefing uses at least 2 prose paragraphs in each narrative section",
+            "world-memory uses at least 3 prose paragraphs in each narrative section",
+            "Do not call a separate LLM quality reviewer",
+        )
+
+        for text in (collection, prompt):
+            for rule in required:
+                with self.subTest(surface="reference" if text is collection else "prompt", rule=rule):
+                    self.assertIn(rule, text)
 
     def test_deployment_documents_read_only_canaries_and_v011x_pause_regenerate_resume(self) -> None:
         deployment = _read(REFERENCE_PATHS["deployment"])

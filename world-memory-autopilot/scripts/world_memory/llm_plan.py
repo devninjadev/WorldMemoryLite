@@ -220,6 +220,7 @@ def _required_report_markdown(
     key: str,
     *,
     label: str,
+    report_type: str | None,
     errors: list[str],
 ) -> str | None:
     value = _required_string(
@@ -249,7 +250,144 @@ def _required_report_markdown(
         errors.append(
             f"{field_label} must contain the approved H2 sections exactly once and in order"
         )
+    elif report_type in REPORT_TYPES:
+        sections = _report_section_lines(value)
+        _validate_key_takeaway(
+            sections["## Key Takeaway"], field_label=field_label, errors=errors
+        )
+        minimum = 2 if report_type == "briefing" else 3
+        for heading in ("## 시장 현황", "## 중장기 맥락"):
+            _validate_narrative_section(
+                sections[heading],
+                heading=heading,
+                report_type=report_type,
+                minimum=minimum,
+                field_label=field_label,
+                errors=errors,
+            )
     return value
+
+
+def _report_section_lines(value: str) -> dict[str, tuple[str, ...]]:
+    """Return visible block-level lines for each approved Report H2 section."""
+
+    sections: dict[str, list[str]] = {
+        heading: [] for heading in _REPORT_MARKDOWN_H2S
+    }
+    current: str | None = None
+    fence: tuple[str, int] | None = None
+
+    for line in value.splitlines():
+        content = _markdown_block_content(line)
+        if content is None:
+            if current is not None and sections[current] and sections[current][-1] != "":
+                sections[current].append("")
+            continue
+
+        if fence is not None:
+            candidate = _fence_run(content)
+            if (
+                candidate is not None
+                and candidate[0] == fence[0]
+                and candidate[1] >= fence[1]
+                and not candidate[2].strip(" \t")
+            ):
+                fence = None
+                if current is not None and sections[current] and sections[current][-1] != "":
+                    sections[current].append("")
+            continue
+
+        candidate = _fence_run(content)
+        if candidate is not None and not (
+            candidate[0] == "`" and "`" in candidate[2]
+        ):
+            fence = candidate[0], candidate[1]
+            if current is not None and sections[current] and sections[current][-1] != "":
+                sections[current].append("")
+            continue
+
+        heading = content.rstrip()
+        if heading in sections:
+            current = heading
+            continue
+        if current is not None:
+            sections[current].append(content.rstrip())
+
+    return {heading: tuple(lines) for heading, lines in sections.items()}
+
+
+def _markdown_list_item(line: str) -> tuple[str, str] | None:
+    """Classify one visible CommonMark block-level list marker."""
+
+    if len(line) >= 2 and line[0] in "-+*" and line[1] in " \t":
+        return "unordered", line[2:].strip()
+
+    index = 0
+    while index < len(line) and line[index].isdigit():
+        index += 1
+    if (
+        1 <= index <= 9
+        and index + 1 < len(line)
+        and line[index] in ".)"
+        and line[index + 1] in " \t"
+    ):
+        return "ordered", line[index + 2 :].strip()
+    return None
+
+
+def _validate_key_takeaway(
+    lines: tuple[str, ...], *, field_label: str, errors: list[str]
+) -> None:
+    visible = [line for line in lines if line.strip()]
+    items = [_markdown_list_item(line) for line in visible]
+    if (
+        not 3 <= len(items) <= 5
+        or any(item is None or item[0] != "unordered" or not item[1] for item in items)
+    ):
+        errors.append(
+            f"{field_label} Key Takeaway must contain 3 to 5 nonempty unordered list items"
+        )
+
+
+def _prose_paragraph_count(lines: tuple[str, ...]) -> int:
+    count = 0
+    inside_paragraph = False
+    for line in lines:
+        if line.strip():
+            if not inside_paragraph:
+                count += 1
+                inside_paragraph = True
+        else:
+            inside_paragraph = False
+    return count
+
+
+def _validate_narrative_section(
+    lines: tuple[str, ...],
+    *,
+    heading: str,
+    report_type: str,
+    minimum: int,
+    field_label: str,
+    errors: list[str],
+) -> None:
+    section_name = heading.removeprefix("## ")
+    visible = [line for line in lines if line.strip()]
+    has_nonprose_block = any(
+        _markdown_list_item(line) is not None or line.lstrip().startswith("#")
+        for line in visible
+    )
+    if has_nonprose_block:
+        errors.append(
+            f"{field_label} {section_name} must use prose paragraphs without top-level lists or headings"
+        )
+        return
+
+    paragraph_count = _prose_paragraph_count(lines)
+    if paragraph_count < minimum:
+        errors.append(
+            f"{field_label} {section_name} must contain at least {minimum} prose paragraphs for {report_type}"
+        )
 
 
 def _markdown_headings(value: str) -> tuple[str, ...]:
@@ -490,6 +628,7 @@ def validate_llm_plan(
             report,
             "markdown",
             label="report",
+            report_type=report_type,
             errors=errors,
         )
 

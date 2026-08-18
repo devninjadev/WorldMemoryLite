@@ -129,15 +129,15 @@ class DocumentationReleaseBoundaryTests(unittest.TestCase):
     def test_readme_names_the_exact_install_artifact_and_operating_model(self) -> None:
         readme = _read(README)
         required = (
-            "world-memory-autopilot-v0.12.0.zip",
+            "world-memory-autopilot-v0.14.0.zip",
             "World Memory · Notion Native",
             "World Memory Collections",
             "World Memory Stories",
             "World Memory Story Changes",
             "World Memory Reports",
             "notion-native-v2",
-            "one-hour",
-            "about three hours",
+            "six-hour default interval",
+            "creationCadenceMinutes=360",
             "six-hour Story",
             "partial source",
             "0.10.x",
@@ -156,13 +156,6 @@ class DocumentationReleaseBoundaryTests(unittest.TestCase):
         )
         for value in required:
             self.assertIn(value, readme)
-        for value in (
-            "WorldMemoryLite",
-            "WorldMemorySkillChatGPT",
-            "does not update existing installations automatically",
-            "explicitly opt in",
-        ):
-            self.assertIn(value, readme)
         self.assertIn(
             "Allow setup and schema-create permissions only during bootstrap, then reduce access to normal read/write after the live canary",
             readme,
@@ -178,12 +171,10 @@ class DocumentationReleaseBoundaryTests(unittest.TestCase):
         )
 
     def test_local_agents_constitution_is_short_untracked_and_outside_package(self) -> None:
-        self.assertFalse((PACKAGE / "AGENTS.md").exists())
-        if not AGENTS.exists():
-            return
         lines = _read(AGENTS).splitlines()
         self.assertGreaterEqual(len(lines), 60)
         self.assertLessEqual(len(lines), 90)
+        self.assertFalse((PACKAGE / "AGENTS.md").exists())
         tracked = subprocess.run(
             ["git", "ls-files", "--error-unmatch", "AGENTS.md"],
             cwd=WORKTREE,
@@ -196,7 +187,7 @@ class DocumentationReleaseBoundaryTests(unittest.TestCase):
     def test_release_resolver_calculates_the_actual_installable_file_set(self) -> None:
         paths = _installable_paths()
         relative = {path.relative_to(PACKAGE).as_posix() for path in paths}
-        self.assertEqual(len(paths), 21)
+        self.assertEqual(len(paths), 23)
 
         for required in (
             "SKILL.md",
@@ -206,13 +197,25 @@ class DocumentationReleaseBoundaryTests(unittest.TestCase):
             "references/notion-layout.md",
             "scripts/world_memory/__init__.py",
             "scripts/world_memory/cli.py",
+            "scripts/world_memory/discovery.py",
+            "scripts/world_memory/plugin_market.py",
         ):
             self.assertIn(required, relative)
+        forbidden_fragments = (
+            "AGENTS.md",
+            "credentials",
+            "raw-plugin-capture",
+            "normalizer-fixture",
+            "__pycache__",
+            ".pyc",
+            "/plans/",
+            "/specs/",
+        )
         for path in relative:
             self.assertFalse(path.startswith("tests/"), path)
-            self.assertNotIn("__pycache__", path)
-            self.assertNotEqual(Path(path).suffix, ".pyc")
             self.assertNotIn(path, {"AGENTS.md", "README.md"})
+            for fragment in forbidden_fragments:
+                self.assertNotIn(fragment, path, path)
             self.assertTrue(
                 path in {"SKILL.md", "requirements.txt"}
                 or path.startswith("agents/")

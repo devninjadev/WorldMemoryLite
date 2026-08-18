@@ -7,6 +7,7 @@ Use this reference only for explicit setup, deployment, canary, rollback, or use
 | Command | Exact input keys | Output purpose |
 |---|---|---|
 | bootstrap-plan | workspaceId | finite fresh-install action plan |
+| resolve-registry-discovery | workspaceId,candidates | bounded read-only registry recovery result |
 | render-scheduled-prompt | schemaVersion,workspaceId,hub,collections,stories,storyChanges,reports,views,marketSources | self-contained scheduled prompt |
 | verify-live | registry,workspaceId,toolAccess,schemaProjections,viewProjections | validation of supplied canary evidence |
 
@@ -15,6 +16,10 @@ Use this reference only for explicit setup, deployment, canary, rollback, or use
 | Value | Closed shape |
 |---|---|
 | bootstrap-plan.workspaceId | UUID string |
+| resolve-registry-discovery | exact keys workspaceId,candidates; candidates is the bounded result of one exact-title Notion search plus exact candidate fetches |
+| candidates[] | exact keys pageId,url,title,marker,workspaceRoot,installation; installation is null for a non-v2 candidate or has exact keys databases,views for a v2 candidate |
+| installation.databases | exact keys collections,stories,storyChanges,reports; each has title,databaseUrl,parentPageId,dataSourceId,properties |
+| installation.views | exact keys reportsRecent,storiesCurrent; each has name,databaseUrl,viewId,dataSourceId,displayProperties,sorts |
 | render-scheduled-prompt | the exact Canonical registry object in notion-layout.md |
 | verify-live.registry/workspaceId | the exact Canonical registry plus the same workspace UUID |
 | verify-live.toolAccess | exact boolean keys fetchSelf,queryDataSources,fetchPages,createPages,updatePages; all true |
@@ -60,9 +65,11 @@ Keep setup finite. Do not save provisional addresses, credentials, OAuth tokens,
 
 ## Schedule
 
-Schedule creation defaults to one hour because that is the compatible creation surface. Recommend that the user adjust the deployed cadence to about three hours. Never claim that adjustment happened until the active schedule is verified. Each actual cadence defines its own report window; Story integration remains due every six hours.
+Schedule creation defaults to a six-hour interval (`creationCadenceMinutes=360`). Never claim that an existing active schedule changed until its live setting is verified. Each actual cadence defines its own report window; Story integration remains due every six hours.
 
-The scheduled prompt embeds the validated registry and the normal operation boundaries. Connector Action Constraints permit `notion_query_data_sources` only for the registered saved-view workflow, and the prompt must always send the view-shaped `data.mode=view` input. Do not use the SQL-shaped input, SQL fallback, search authority, runtime view mutation, schema changes, deletion, movement, or broad repair.
+The scheduled prompt normally embeds the validated registry and the normal operation boundaries. If both that registry and a complete valid ChatGPT-memory registry are absent, the caller may search Notion exactly once for the exact Hub title, fetch the exact-title candidates, and pass bounded observations to `resolve-registry-discovery`. The helper selects only one workspace-root candidate with the exact v2 marker and exact four-database plus two-view structure; `text` from the connector is normalized only as the transport alias of logical `rich_text`. It returns a recovered registry or one bounded not-found, ambiguous, or structure-mismatch error. It does not contact Notion, write, repair, or persist anything. After this pre-operation recovery boundary, search and broad scans are forbidden again.
+
+Connector Action Constraints permit `notion_query_data_sources` only for the registered saved-view workflow, and the prompt must always send the view-shaped `data.mode=view` input. Do not use the SQL-shaped input, SQL fallback, runtime view mutation, schema changes, deletion, movement, or broad repair.
 
 ## Repair and migration
 

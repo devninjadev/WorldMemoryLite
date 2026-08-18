@@ -86,15 +86,25 @@ REPORT_MARKDOWN = """# 🌍 변동성은 낮지만 경계는 남아 있다
 
 ## Key Takeaway
 
-핵심 결론.
+- 시장 방향은 견조하지만 에너지 위험이 남아 있어 환경은 엇갈린다.
+- 낮은 변동성은 즉각적인 공포가 제한적이라는 근거다.
+- 유가와 장기금리의 동반 상승 여부가 다음 판단을 좌우한다.
 
 ## 시장 현황
 
-시장 현황.
+주식시장은 높은 수준을 유지했고 단기 변동성은 낮았다.
+
+원유 가격은 공급 우려를 반영해 상승하며 주식과 다른 신호를 보냈다.
+
+유가 상승이 장기금리로 전이되는지는 아직 확인되지 않았다.
 
 ## 중장기 맥락
 
-중장기 맥락.
+이전 보고서의 낮은 단기 공포 판단은 유지된다.
+
+공급 차질이 현실화되면 물가와 금리 경로에 부담이 누적될 수 있다.
+
+다음 보고서에서는 원유 상승의 지속성과 장기금리 반응을 함께 본다.
 
 ## 주요 지표들
 
@@ -140,6 +150,88 @@ TOOL_ACCESS = {
     "createPages": True,
     "updatePages": True,
 }
+MARKET_TOOL_ACCESS = {
+    "alpacaMarketData": True,
+    "alpacaOptions": True,
+    "alpacaCalendar": True,
+    "wolframLanguage": True,
+    "wolframAlpha": True,
+}
+VALID_SPY_PAYLOAD = {
+    "request": {
+        "capability": "equity-current-price",
+        "cutoff": "2026-08-16T12:00:00+00:00",
+        "maximumAgeSeconds": 3600,
+        "instrument": {
+            "symbol": "SPY",
+            "currency": "USD",
+            "region": "US",
+            "assetClass": "ETF",
+        },
+    },
+    "candidate": {
+        "schemaVersion": "1.0",
+        "capability": "equity-current-price",
+        "provider": "wolfram-language",
+        "sourceLocator": {
+            "kind": "provider-query",
+            "tool": "Wolfram Language",
+            "queryDescriptor": "equity-current-price:SPY",
+        },
+        "fetchedAt": "2026-08-16T11:45:00+00:00",
+        "completeness": "complete",
+        "evidenceBindings": [
+            {"field": field, "evidenceId": "ev-price", "evidencePath": field}
+            for field in (
+                "fetchedAt",
+                "instrument.symbol",
+                "instrument.currency",
+                "instrument.region",
+                "instrument.assetClass",
+                "instrument.exchange",
+                "price",
+                "observedAt",
+                "valueBasis",
+                "marketScope",
+                "session",
+            )
+        ],
+        "instrument": {
+            "symbol": "SPY",
+            "currency": "USD",
+            "region": "US",
+            "assetClass": "ETF",
+            "exchange": "NYSE Arca",
+        },
+        "price": 645.25,
+        "observedAt": "2026-08-16T07:30:00-04:00",
+        "valueBasis": "last",
+        "marketScope": "provider-market",
+        "session": "regular",
+    },
+    "evidence": [
+        {
+            "evidenceId": "ev-price",
+            "format": "structured",
+            "content": {
+                "fetchedAt": "2026-08-16T11:45:00+00:00",
+                "instrument": {
+                    "symbol": "SPY",
+                    "currency": "USD",
+                    "region": "US",
+                    "assetClass": "ETF",
+                    "exchange": "NYSE Arca",
+                },
+                "price": 645.25,
+                "observedAt": "2026-08-16T07:30:00-04:00",
+                "valueBasis": "last",
+                "marketScope": "provider-market",
+                "session": "regular",
+            },
+        }
+    ],
+    "normalizationAttempt": 1,
+}
 
 
 def schema_projections() -> dict[str, object]:
@@ -167,6 +259,81 @@ def view_projections() -> dict[str, object]:
             "dataSourceId": STORIES_ID,
             "configuration": STORIES_CURRENT_CONFIGURATION,
         },
+    }
+
+
+def registry_discovery_input() -> dict[str, object]:
+    databases = {}
+    for key, database_id in DATABASE_IDS.items():
+        databases[key] = {
+            "title": DATABASE_SCHEMAS[key]["title"],
+            "databaseUrl": "https://app.notion.com/p/" + database_id.replace("-", ""),
+            "parentPageId": HUB_ID,
+            "dataSourceId": REGISTRY[key]["dataSourceId"],
+            "properties": {
+                name: descriptor["type"]
+                for name, descriptor in DATABASE_SCHEMAS[key]["properties"].items()
+            },
+        }
+    return {
+        "workspaceId": WORKSPACE_ID,
+        "candidates": [
+            {
+                "pageId": HUB_ID,
+                "url": REGISTRY["hub"]["url"],
+                "title": "World Memory · Notion Native",
+                "marker": "World Memory storage contract: notion-native-v2",
+                "workspaceRoot": True,
+                "installation": {
+                    "databases": databases,
+                    "views": {
+                        "reportsRecent": {
+                            "name": "Reports Recent",
+                            "databaseUrl": databases["reports"]["databaseUrl"],
+                            "viewId": REPORTS_VIEW_ID,
+                            "dataSourceId": REPORTS_ID,
+                            "displayProperties": [
+                                "Name",
+                                "Report Type",
+                                "Window Start",
+                                "Window End",
+                                "Created At",
+                                "Collection",
+                                "Stories",
+                            ],
+                            "sorts": [
+                                '"Window End" DESC',
+                                '"Created At" DESC',
+                            ],
+                        },
+                        "storiesCurrent": {
+                            "name": "Stories Current",
+                            "databaseUrl": databases["stories"]["databaseUrl"],
+                            "viewId": STORIES_VIEW_ID,
+                            "dataSourceId": STORIES_ID,
+                            "displayProperties": [
+                                "Name",
+                                "Status",
+                                "Category",
+                                "Regions",
+                                "Importance",
+                                "Confidence",
+                                "Current View",
+                                "First Seen",
+                                "Last Evidence At",
+                                "Last Updated",
+                                "Related Stories",
+                                "Created At",
+                            ],
+                            "sorts": [
+                                '"Last Evidence At" DESC',
+                                '"Last Updated" DESC',
+                            ],
+                        },
+                    },
+                },
+            }
+        ],
     }
 
 
@@ -233,8 +400,9 @@ class CliMappingTests(unittest.TestCase):
     def test_help_lists_exact_native_command_surface(self) -> None:
         result = run_cli("--help")
         self.assertEqual(result.returncode, 0, result.stderr)
-        for command in (
+        expected_commands = (
             "validate-registry",
+            "resolve-registry-discovery",
             "schema",
             "bootstrap-plan",
             "window",
@@ -244,10 +412,24 @@ class CliMappingTests(unittest.TestCase):
             "render-scheduled-prompt",
             "normalize-feed",
             "market-data-plan",
+            "validate-market-observation",
             "collect-market-data",
             "verify-live",
-        ):
-            self.assertIn(command, result.stdout)
+        )
+        usage_commands = tuple(
+            result.stdout.split("{", 1)[1].split("}", 1)[0].split(",")
+        )
+        self.assertEqual(usage_commands, expected_commands)
+
+    def test_resolve_registry_discovery_maps_supplied_read_only_observations(self) -> None:
+        result = self.assert_success_object(
+            run_cli(
+                "resolve-registry-discovery",
+                stdin=json.dumps(registry_discovery_input()),
+            )
+        )
+
+        self.assertEqual(result, {"status": "recovered", "error": "", "registry": REGISTRY})
 
     def test_schema_maps_an_empty_object_to_an_independent_manifest(self) -> None:
         result = self.assert_success_object(run_cli("schema", "-", stdin="{}"))
@@ -501,36 +683,39 @@ class CliMappingTests(unittest.TestCase):
         self.assertEqual(result["items"][0]["summary"], "Fed & markets moved")
         self.assertNotIn("hidden.example", result["items"][0]["summary"])
 
-    def test_market_data_plan_is_declarative_and_provider_independent(self) -> None:
+    def test_market_data_plan_uses_current_plugin_access_and_capability_order(self) -> None:
         result = self.assert_success_object(
             run_cli(
-                "market-data-plan", stdin=json.dumps({"registry": REGISTRY})
+                "market-data-plan",
+                stdin=json.dumps(
+                    {"registry": REGISTRY, "toolAccess": MARKET_TOOL_ACCESS}
+                ),
             )
         )
         self.assertEqual(
-            result,
-            {
-                "mode": "caller-supplied-observations",
-                "providers": [
-                    {"id": "google-finance", "independent": True},
-                    {
-                        "id": "spreadsheet",
-                        "independent": True,
-                        "publicCsvUrl": VIX_PUBLIC_CSV_URL,
-                        "expectedSymbols": VIX_SYMBOLS,
-                    },
-                    {"id": "cboe", "independent": True},
-                ],
-                "combination": {
-                    "providerOrder": "input-order",
-                    "valueConflict": "first-successful-provider-wins",
-                    "failurePolicy": "preserve-independent-successes",
-                },
-                "externalIo": False,
-            },
+            result["capabilities"]["treasury-yield-curve"]["providers"][:2],
+            ["wolfram-language", "wolfram-alpha"],
         )
+        self.assertTrue(
+            result["capabilities"]["treasury-yield-curve"][
+                "shortCircuitOnComplete"
+            ]
+        )
+        self.assertEqual(result["vixPublicCsvUrl"], VIX_PUBLIC_CSV_URL)
+        self.assertEqual(result["vixSymbols"], VIX_SYMBOLS)
 
-    def test_collect_market_data_combines_only_supplied_provider_results(self) -> None:
+    def test_validate_market_observation_returns_only_normalized_observation(self) -> None:
+        result = self.assert_success_object(
+            run_cli(
+                "validate-market-observation",
+                stdin=json.dumps(VALID_SPY_PAYLOAD),
+            )
+        )
+        self.assertEqual(result["status"], "accepted")
+        self.assertEqual(result["observation"]["observedAt"], "2026-08-16T11:30:00Z")
+        self.assertNotIn("evidence", json.dumps(result))
+
+    def test_collect_market_data_rejects_planless_legacy_provider_results(self) -> None:
         request = {
             "providers": [
                 {
@@ -549,33 +734,10 @@ class CliMappingTests(unittest.TestCase):
                 },
             ]
         }
-        result = self.assert_success_object(
-            run_cli("collect-market-data", stdin=json.dumps(request))
-        )
-        self.assertEqual(
-            result,
-            {
-                "status": "partial",
-                "providers": [
-                    {
-                        "provider": "google-finance",
-                        "status": "ok",
-                        "values": {"SPY": 651.2},
-                        "error": "",
-                        "stage": "",
-                    },
-                    {
-                        "provider": "cboe",
-                        "status": "error",
-                        "values": {},
-                        "error": "market_provider_error",
-                        "stage": "parse",
-                    },
-                ],
-                "values": {"SPY": 651.2},
-                "gaps": ["cboe: market_provider_error"],
-            },
-        )
+        result = run_cli("collect-market-data", stdin=json.dumps(request))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "invalid-input\n")
 
     def test_collect_market_data_rejects_malformed_provider_truth(self) -> None:
         malformed = {
@@ -595,6 +757,520 @@ class CliMappingTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(result.stdout, "")
         self.assertEqual(result.stderr, "invalid-input\n")
+
+    def test_collect_market_data_rejects_unvalidated_partial_scalars(self) -> None:
+        request = {
+            "providers": [
+                {
+                    "provider": "wolfram-language",
+                    "status": "partial",
+                    "values": {"VIX9D": 15.2, "VIX": 16.4},
+                    "error": "market_provider_partial",
+                    "stage": "",
+                },
+                {
+                    "provider": "cboe",
+                    "status": "ok",
+                    "values": {"VIX": 99.0, "VIX3M": 17.1, "VIX6M": 18.0},
+                    "error": "",
+                    "stage": "",
+                },
+            ]
+        }
+
+        result = run_cli("collect-market-data", stdin=json.dumps(request))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertEqual(result.stderr, "invalid-input\n")
+
+    def test_collect_market_data_requires_the_invocation_plan_and_complete_chain(self) -> None:
+        plan = self.assert_success_object(
+            run_cli(
+                "market-data-plan",
+                stdin=json.dumps(
+                    {"registry": REGISTRY, "toolAccess": MARKET_TOOL_ACCESS}
+                ),
+            )
+        )
+        validated = self.assert_success_object(
+            run_cli(
+                "validate-market-observation",
+                stdin=json.dumps(VALID_SPY_PAYLOAD),
+            )
+        )["observation"]
+        request = {
+            "plan": plan,
+            "outcomes": [
+                {
+                    "capability": "equity-current-price",
+                    "request": VALID_SPY_PAYLOAD["request"],
+                    "stableKey": "equity.current-price.SPY",
+                    "attempts": [
+                        {
+                            "provider": "alpaca",
+                            "status": "error",
+                            "values": {},
+                            "error": "premium-feed-required",
+                            "stage": "fetch",
+                            "validationEnvelope": None,
+                        },
+                        {
+                            "provider": "wolfram-language",
+                            "status": "ok",
+                            "values": {"equity.current-price.SPY": validated},
+                            "error": "",
+                            "stage": "",
+                            "validationEnvelope": VALID_SPY_PAYLOAD,
+                        },
+                        {
+                            "provider": "wolfram-alpha",
+                            "status": "not-attempted",
+                            "values": {},
+                            "error": "",
+                            "stage": "",
+                            "validationEnvelope": None,
+                        },
+                        {
+                            "provider": "existing-equity",
+                            "status": "not-attempted",
+                            "values": {},
+                            "error": "",
+                            "stage": "",
+                            "validationEnvelope": None,
+                        },
+                    ],
+                }
+            ],
+        }
+
+        collected = self.assert_success_object(
+            run_cli("collect-market-data", stdin=json.dumps(request))
+        )
+
+        self.assertEqual(collected["values"]["equity.current-price.SPY"], validated)
+        self.assertEqual(
+            [row["status"] for row in collected["providers"]],
+            ["error", "ok", "not-attempted", "not-attempted"],
+        )
+        self.assertEqual(
+            collected["gaps"],
+            ["equity-current-price/alpaca: premium-feed-required"],
+        )
+
+        missing_attempt = json.loads(json.dumps(request))
+        missing_attempt["outcomes"][0]["attempts"].pop()
+        failed = run_cli("collect-market-data", stdin=json.dumps(missing_attempt))
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertEqual(failed.stderr, "invalid-input\n")
+
+    def test_collect_market_data_revalidates_the_original_evidence_envelope(self) -> None:
+        plan = self.assert_success_object(
+            run_cli(
+                "market-data-plan",
+                stdin=json.dumps(
+                    {"registry": REGISTRY, "toolAccess": MARKET_TOOL_ACCESS}
+                ),
+            )
+        )
+        validated = self.assert_success_object(
+            run_cli(
+                "validate-market-observation",
+                stdin=json.dumps(VALID_SPY_PAYLOAD),
+            )
+        )["observation"]
+        stable_key = "equity.current-price.SPY"
+        attempts = []
+        for provider in plan["capabilities"]["equity-current-price"]["providers"]:
+            if provider == "alpaca":
+                attempts.append(
+                    {
+                        "provider": provider,
+                        "status": "error",
+                        "values": {},
+                        "error": "provider-no-result",
+                        "stage": "fetch",
+                        "validationEnvelope": None,
+                    }
+                )
+            elif provider == "wolfram-language":
+                attempts.append(
+                    {
+                        "provider": provider,
+                        "status": "ok",
+                        "values": {stable_key: validated},
+                        "error": "",
+                        "stage": "",
+                        "validationEnvelope": VALID_SPY_PAYLOAD,
+                    }
+                )
+            else:
+                attempts.append(
+                    {
+                        "provider": provider,
+                        "status": "not-attempted",
+                        "values": {},
+                        "error": "",
+                        "stage": "",
+                        "validationEnvelope": None,
+                    }
+                )
+        request = {
+            "plan": plan,
+            "outcomes": [
+                {
+                    "capability": "equity-current-price",
+                    "request": VALID_SPY_PAYLOAD["request"],
+                    "stableKey": stable_key,
+                    "attempts": attempts,
+                }
+            ],
+        }
+
+        accepted = run_cli("collect-market-data", stdin=json.dumps(request))
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+
+        fabricated = json.loads(json.dumps(request))
+        fabricated["outcomes"][0]["attempts"][1]["values"][stable_key][
+            "price"
+        ] = 999999.0
+        rejected = run_cli("collect-market-data", stdin=json.dumps(fabricated))
+
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertEqual(rejected.stdout, "")
+        self.assertEqual(rejected.stderr, "invalid-input\n")
+
+    def test_collect_market_data_requires_all_five_independent_fred_series(self) -> None:
+        from tests.test_plugin_market import _bind_structured_payload, economic_payload
+
+        plan = self.assert_success_object(
+            run_cli(
+                "market-data-plan",
+                stdin=json.dumps(
+                    {"registry": REGISTRY, "toolAccess": MARKET_TOOL_ACCESS}
+                ),
+            )
+        )
+        outcomes = []
+        for series_id in (
+            "FRED:NFCIRISK",
+            "FRED:WALCL",
+            "FRED:WDTGAL",
+            "FRED:RRPONTSYD",
+            "FRED:DTWEXBGS",
+        ):
+            envelope = economic_payload()
+            envelope["request"]["seriesId"] = series_id
+            envelope["request"]["semanticIdentity"] = series_id
+            envelope["candidate"]["seriesId"] = series_id
+            envelope["candidate"]["semanticIdentity"] = series_id
+            envelope["candidate"]["sourceLocator"]["queryDescriptor"] = (
+                f"economic-time-series:{series_id}:2026-05-01:2026-07-01"
+            )
+            _bind_structured_payload(envelope, "ev-series")
+            observation = self.assert_success_object(
+                run_cli(
+                    "validate-market-observation", stdin=json.dumps(envelope)
+                )
+            )["observation"]
+            stable_key = f"economic.{series_id}"
+            outcomes.append(
+                {
+                    "capability": "economic-time-series",
+                    "request": envelope["request"],
+                    "stableKey": stable_key,
+                    "attempts": [
+                        {
+                            "provider": "wolfram-language",
+                            "status": "ok",
+                            "values": {stable_key: observation},
+                            "error": "",
+                            "stage": "",
+                            "validationEnvelope": envelope,
+                        },
+                        *[
+                            {
+                                "provider": provider,
+                                "status": "not-attempted",
+                                "values": {},
+                                "error": "",
+                                "stage": "",
+                                "validationEnvelope": None,
+                            }
+                            for provider in ("wolfram-alpha", "fred-batch", "fred-page")
+                        ],
+                    ],
+                }
+            )
+
+        incomplete = run_cli(
+            "collect-market-data",
+            stdin=json.dumps({"plan": plan, "outcomes": outcomes[:1]}),
+        )
+        self.assertNotEqual(incomplete.returncode, 0)
+        self.assertEqual(incomplete.stderr, "invalid-input\n")
+
+        complete = self.assert_success_object(
+            run_cli(
+                "collect-market-data",
+                stdin=json.dumps({"plan": plan, "outcomes": outcomes}),
+            )
+        )
+        self.assertEqual(complete["status"], "ok")
+        self.assertEqual(
+            set(complete["values"]),
+            {f"economic.{series_id}" for series_id in (
+                "FRED:NFCIRISK",
+                "FRED:WALCL",
+                "FRED:WDTGAL",
+                "FRED:RRPONTSYD",
+                "FRED:DTWEXBGS",
+            )},
+        )
+
+    def test_collect_market_data_rejects_raw_scalar_control_and_credentials(self) -> None:
+        for values in (
+            {"SPY": 645.25},
+            {"rawEvidence": {"price": 645.25}},
+            {"credential": "secret"},
+        ):
+            with self.subTest(values=values):
+                request = {
+                    "plan": self.assert_success_object(
+                        run_cli(
+                            "market-data-plan",
+                            stdin=json.dumps(
+                                {
+                                    "registry": REGISTRY,
+                                    "toolAccess": MARKET_TOOL_ACCESS,
+                                }
+                            ),
+                        )
+                    ),
+                    "outcomes": [
+                        {
+                            "capability": "equity-current-price",
+                            "request": VALID_SPY_PAYLOAD["request"],
+                            "stableKey": "equity.current-price.SPY",
+                            "attempts": [
+                                {
+                                    "provider": provider,
+                                    "status": "partial" if index == 0 else "not-attempted",
+                                    "values": values if index == 0 else {},
+                                    "error": "market_provider_partial" if index == 0 else "",
+                                    "stage": "",
+                                }
+                                for index, provider in enumerate(
+                                    [
+                                        "alpaca",
+                                        "wolfram-language",
+                                        "wolfram-alpha",
+                                        "existing-equity",
+                                    ]
+                                )
+                            ],
+                        }
+                    ],
+                }
+                completed = run_cli(
+                    "collect-market-data", stdin=json.dumps(request)
+                )
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertEqual(completed.stdout, "")
+                self.assertEqual(completed.stderr, "invalid-input\n")
+
+    def test_collect_market_data_rejects_partial_gap_code_as_value_less_error(self) -> None:
+        plan = self.assert_success_object(
+            run_cli(
+                "market-data-plan",
+                stdin=json.dumps(
+                    {"registry": REGISTRY, "toolAccess": MARKET_TOOL_ACCESS}
+                ),
+            )
+        )
+        attempts = [
+            {
+                "provider": provider,
+                "status": "error",
+                "values": {},
+                "error": "market_provider_partial",
+                "stage": "parse",
+                "validationEnvelope": None,
+            }
+            for provider in plan["capabilities"]["equity-current-price"]["providers"]
+        ]
+        request = {
+            "plan": plan,
+            "outcomes": [
+                {
+                    "capability": "equity-current-price",
+                    "request": VALID_SPY_PAYLOAD["request"],
+                    "stableKey": "equity.current-price.SPY",
+                    "attempts": attempts,
+                }
+            ],
+        }
+
+        rejected = run_cli("collect-market-data", stdin=json.dumps(request))
+
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertEqual(rejected.stdout, "")
+        self.assertEqual(rejected.stderr, "invalid-input\n")
+
+    def test_atomic_treasury_fallback_replaces_partial_without_curve_mixing(self) -> None:
+        from tests.test_plugin_market import _bind_structured_payload, treasury_payload
+
+        plan = self.assert_success_object(
+            run_cli(
+                "market-data-plan",
+                stdin=json.dumps(
+                    {"registry": REGISTRY, "toolAccess": MARKET_TOOL_ACCESS}
+                ),
+            )
+        )
+        first = treasury_payload()
+        first["candidate"]["completeness"] = "partial"
+        del first["candidate"]["maturities"]["30Y"]
+        _bind_structured_payload(first, "ev-curve")
+        first_observation = self.assert_success_object(
+            run_cli("validate-market-observation", stdin=json.dumps(first))
+        )["observation"]
+        second = treasury_payload()
+        second["candidate"]["provider"] = "wolfram-alpha"
+        second["candidate"]["sourceLocator"]["tool"] = "Wolfram Alpha"
+        _bind_structured_payload(second, "ev-curve")
+        second_observation = self.assert_success_object(
+            run_cli("validate-market-observation", stdin=json.dumps(second))
+        )["observation"]
+        stable_key = "treasury.yield-curve.US"
+        attempts = [
+            {
+                "provider": "wolfram-language",
+                "status": "partial",
+                "values": {stable_key: first_observation},
+                "error": "market_provider_partial",
+                "stage": "",
+                "validationEnvelope": first,
+            },
+            {
+                "provider": "wolfram-alpha",
+                "status": "ok",
+                "values": {stable_key: second_observation},
+                "error": "",
+                "stage": "",
+                "validationEnvelope": second,
+            },
+            *[
+                {
+                    "provider": provider,
+                    "status": "not-attempted",
+                    "values": {},
+                    "error": "",
+                    "stage": "",
+                    "validationEnvelope": None,
+                }
+                for provider in ("treasury-csv", "treasury-xml")
+            ],
+        ]
+        collected = self.assert_success_object(
+            run_cli(
+                "collect-market-data",
+                stdin=json.dumps(
+                    {
+                        "plan": plan,
+                        "outcomes": [
+                            {
+                                "capability": "treasury-yield-curve",
+                                "request": second["request"],
+                                "stableKey": stable_key,
+                                "attempts": attempts,
+                            }
+                        ],
+                    }
+                ),
+            )
+        )
+        self.assertEqual(collected["values"][stable_key], second_observation)
+        self.assertEqual(
+            collected["values"][stable_key]["provider"], "wolfram-alpha"
+        )
+
+    def test_vix_fallback_preserves_earlier_components_with_per_component_provenance(self) -> None:
+        from tests.test_plugin_market import _bind_structured_payload, volatility_payload
+
+        plan = self.assert_success_object(
+            run_cli(
+                "market-data-plan",
+                stdin=json.dumps(
+                    {"registry": REGISTRY, "toolAccess": MARKET_TOOL_ACCESS}
+                ),
+            )
+        )
+        first = volatility_payload(completeness="partial")
+        first_observation = self.assert_success_object(
+            run_cli("validate-market-observation", stdin=json.dumps(first))
+        )["observation"]
+        second = volatility_payload(completeness="complete")
+        second["candidate"]["provider"] = "wolfram-alpha"
+        second["candidate"]["sourceLocator"]["tool"] = "Wolfram Alpha"
+        second["candidate"]["components"]["VIX9D"] = 99.0
+        second["candidate"]["components"]["VIX"] = 99.0
+        _bind_structured_payload(second, "ev-vix")
+        second_observation = self.assert_success_object(
+            run_cli("validate-market-observation", stdin=json.dumps(second))
+        )["observation"]
+        stable_key = "VIX.term-structure"
+        attempts = [
+            {
+                "provider": "wolfram-language",
+                "status": "partial",
+                "values": {stable_key: first_observation},
+                "error": "market_provider_partial",
+                "stage": "",
+                "validationEnvelope": first,
+            },
+            {
+                "provider": "wolfram-alpha",
+                "status": "ok",
+                "values": {stable_key: second_observation},
+                "error": "",
+                "stage": "",
+                "validationEnvelope": second,
+            },
+            *[
+                {
+                    "provider": provider,
+                    "status": "not-attempted",
+                    "values": {},
+                    "error": "",
+                    "stage": "",
+                    "validationEnvelope": None,
+                }
+                for provider in ("spreadsheet", "cboe")
+            ],
+        ]
+        collected = self.assert_success_object(
+            run_cli(
+                "collect-market-data",
+                stdin=json.dumps(
+                    {
+                        "plan": plan,
+                        "outcomes": [
+                            {
+                                "capability": "volatility-term-structure",
+                                "request": second["request"],
+                                "stableKey": stable_key,
+                                "attempts": attempts,
+                            }
+                        ],
+                    }
+                ),
+            )
+        )
+        components = collected["values"][stable_key]["components"]
+        self.assertEqual(components["VIX9D"]["level"], 15.2)
+        self.assertEqual(components["VIX9D"]["provider"], "wolfram-language")
+        self.assertEqual(components["VIX3M"]["level"], 17.1)
+        self.assertEqual(components["VIX3M"]["provider"], "wolfram-alpha")
 
     def test_verify_live_validates_only_supplied_canary_evidence(self) -> None:
         projections = schema_projections()
@@ -646,6 +1322,77 @@ class CliSafetyTests(unittest.TestCase):
                 self.assert_safe_error(
                     run_cli("validate-registry", stdin=payload), "invalid-input"
                 )
+
+    def test_market_commands_reject_extra_access_and_invalid_json_without_echo(self) -> None:
+        secret = "credential-shaped-extra-tool-access"
+        extra_access = {**MARKET_TOOL_ACCESS, secret: True}
+        self.assert_safe_error(
+            run_cli(
+                "market-data-plan",
+                stdin=json.dumps({"registry": REGISTRY, "toolAccess": extra_access}),
+            ),
+            "invalid-input",
+            secret,
+        )
+        self.assert_safe_error(
+            run_cli("validate-market-observation", stdin='{"evidence":'),
+            "invalid-input",
+        )
+
+    def test_market_observation_rejections_are_bounded_and_value_free(self) -> None:
+        safe_codes = {
+            "provider-no-result",
+            "provider-malformed",
+            "entity-mismatch",
+            "currency-mismatch",
+            "unsupported-value-basis",
+            "missing-required-field",
+            "evidence-unbound",
+            "future-dated",
+            "stale",
+            "insufficient-history",
+            "pair-misaligned",
+            "normalization-failed",
+        }
+        secret = "https://user:API_KEY@example.test/private-market-error"
+        malformed_payloads = []
+
+        malformed_evidence = json.loads(json.dumps(VALID_SPY_PAYLOAD))
+        malformed_evidence["evidence"] = [{"unexpected": secret}]
+        malformed_payloads.append(malformed_evidence)
+
+        duplicate_evidence = json.loads(json.dumps(VALID_SPY_PAYLOAD))
+        duplicate_evidence["evidence"].append(
+            dict(duplicate_evidence["evidence"][0])
+        )
+        malformed_payloads.append(duplicate_evidence)
+
+        raw_provider_error = json.loads(json.dumps(VALID_SPY_PAYLOAD))
+        raw_provider_error["providerError"] = secret
+        malformed_payloads.append(raw_provider_error)
+
+        credential_locator = json.loads(json.dumps(VALID_SPY_PAYLOAD))
+        credential_locator["candidate"]["sourceLocator"] = {
+            "kind": "url",
+            "url": secret,
+        }
+        malformed_payloads.append(credential_locator)
+
+        for payload in malformed_payloads:
+            with self.subTest(payload=payload):
+                result = run_cli(
+                    "validate-market-observation", stdin=json.dumps(payload)
+                )
+                value = json.loads(result.stdout)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stderr, "")
+                self.assertEqual(value["status"], "rejected")
+                self.assertTrue(value["errors"])
+                self.assertLessEqual(
+                    {error["code"] for error in value["errors"]}, safe_codes
+                )
+                self.assertNotIn(secret, result.stdout)
+                self.assertNotIn("ev-price", result.stdout)
 
     def test_deep_json_recursion_is_a_value_free_invalid_input(self) -> None:
         payload = '{"x":' + "[" * 10_000 + "0" + "]" * 10_000 + "}"

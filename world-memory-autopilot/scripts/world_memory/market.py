@@ -6,8 +6,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Callable, Iterable
 
+from .plugin_market import SAFE_PROVIDER_RESULT_ERRORS
+
 
 _ERROR_LIMIT = 240
+_PARTIAL_GAP_CODES = frozenset({"market_provider_partial"})
 
 
 @dataclass(frozen=True)
@@ -81,6 +84,8 @@ def combine_market_results(results: Iterable[ProviderResult]) -> MarketSnapshot:
         if normalized.status == "error":
             gaps.append(f"{normalized.provider}: {normalized.error}")
             continue
+        if normalized.status == "partial":
+            gaps.append(f"{normalized.provider}: {normalized.error}")
         for key, value in normalized.values.items():
             values.setdefault(key, value)
 
@@ -157,14 +162,29 @@ def _normalize_result(result: ProviderResult) -> ProviderResult:
     if result.status == "error":
         if result.values or not result.error.strip() or result.stage not in {"fetch", "parse"}:
             raise ValueError("error provider results require an attempted failure stage")
+        safe_error = (
+            result.error
+            if result.error in SAFE_PROVIDER_RESULT_ERRORS
+            else "market_provider_error"
+        )
+        return ProviderResult(provider, "error", {}, safe_error, result.stage)
+    if result.status == "partial":
+        if (
+            not result.values
+            or result.error not in _PARTIAL_GAP_CODES
+            or result.stage
+        ):
+            raise ValueError(
+                "partial provider results require values and a safe gap code"
+            )
         return ProviderResult(
-            provider, "error", {}, "market_provider_error", result.stage
+            provider, "partial", dict(result.values), result.error
         )
     if result.status == "not-attempted":
         if result.values or result.error or result.stage:
             raise ValueError("not-attempted provider results cannot contain observations")
         return ProviderResult(provider, "not-attempted", {}, "")
-    raise ValueError("provider status must be ok, error, or not-attempted")
+    raise ValueError("provider status is invalid")
 
 
 def _require_provider(value: object) -> str:

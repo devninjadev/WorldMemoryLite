@@ -1,21 +1,23 @@
-# World Memory Autopilot 0.12.0
+# World Memory Autopilot 0.14.0
 
-`world-memory-autopilot-v0.12.0.zip` installs a SQL-free, Notion-native World Memory skill for ChatGPT Workspace Agents and the official Notion MCP.
+`world-memory-autopilot-v0.14.0.zip` installs a SQL-free, Notion-native World Memory skill for ChatGPT Workspace Agents and the official Notion MCP.
 
-> **Independent release line:** `WorldMemoryLite` is separate from the legacy `WorldMemorySkillChatGPT` repository. Publishing here does not update existing installations automatically. Existing users must explicitly opt in, pause the old schedule, install this package, and complete the documented v0.11.x migration before resuming operation.
+Alpaca and Wolfram are optional connectors. When either is unavailable, the existing official and public fallbacks remain available according to the capability plan; the core Notion persistence boundary remains the official Notion MCP.
 
 ## Install
 
-1. Install `world-memory-autopilot-v0.12.0.zip` as the workspace skill.
+1. Install `world-memory-autopilot-v0.14.0.zip` as the workspace skill.
 2. Connect the official Notion MCP. Allow setup and schema-create permissions only during bootstrap, then reduce access to normal read/write after the live canary; destructive permissions remain disabled.
 3. Run the explicit fresh bootstrap. It creates a new `World Memory · Notion Native` Hub and four database containers, each with an initial data source: `World Memory Collections`, `World Memory Stories`, `World Memory Story Changes`, and `World Memory Reports`.
 4. Configure the saved Notion views `Reports Recent` and `Stories Current`, then complete the finite schema-and-view read-back. Run the read-only public CSV canary and require the ordered VIX symbols `VIX9D`, `VIX`, `VIX3M`, and `VIX6M`; the setup must never mutate that spreadsheet.
 5. Embed the validated `notion-native-v2` registry, including the exact public VIX CSV source contract, in a regenerated scheduled prompt.
-6. Create the schedule. The creation default is a one-hour interval; the operating recommendation is about three hours. Confirm the active setting rather than assuming it changed.
+6. Create the schedule with the six-hour default interval (`creationCadenceMinutes=360`). Confirm an existing active schedule's live setting rather than assuming it changed.
 
 The registry is an immutable installation address book for the workspace, Hub, four data sources, two saved views, and the approved public market source. Hub addresses retain `pageId` plus its page URL; data source addresses retain only `dataSourceId`, not database container IDs or URLs; view addresses retain only their exact URL. `marketSources.vixSpreadsheet` retains only the exact public CSV URL and ordered symbols, never observations or fetch state. Do not put credentials or mutable run state in it.
 
 ## Normal operation
+
+The skill first validates its embedded registry, or a complete valid registry in ChatGPT memory when the embedded location is absent. If neither contains the World Memory location, it performs one exact-title Notion search for `World Memory · Notion Native`, fetches only those candidates, and accepts only one workspace-root Hub carrying the exact `notion-native-v2` marker whose four child databases and two saved views match the expected structure. Missing, ambiguous, or mismatched results stop with a bounded error. Recovery is read-only: it neither persists the recovered address nor changes or repairs Notion.
 
 Each window first reads `Reports Recent` through the official Notion MCP query tool's explicit view mode and reuses an existing Report when present. The scheduled prompt never sends SQL-shaped input, never invokes the SQL backend, and has no SQL fallback. A new run collects the fixed news feeds and independent market observations, writes a readable Collection, creates exactly one Report, and reads `Stories Current` only for six-hour Story integration when due. It does not query recent Collections. Stories retain the current market thesis; Story Changes explain confirmed material creates or updates.
 
@@ -33,6 +35,8 @@ v0.11.x migrations must pause the existing schedule, explicitly regenerate the `
 
 ## Existing installations and rollback
 
-Old `0.10.x` artifacts are rollback-only archives. Their Hubs and records are not auto-migrated, adopted, merged, or deleted by 0.12.0. Install the new release into a clean Hub, pause the old schedule, verify the new schedule, and keep the old Hub as an independent reference. Rollback means stopping the new schedule and deciding separately whether to reactivate an older one; it does not require deletion.
+Old `0.10.x` artifacts are rollback-only archives. Their Hubs and records are not auto-migrated, adopted, merged, or deleted by 0.14.0. Install the new release into a clean Hub, pause the old schedule, verify the new schedule, and keep the old Hub as an independent reference. Rollback means stopping the new schedule and deciding separately whether to reactivate an older one; it does not require deletion.
 
-Live acceptance requires a new test Hub and actual Workspace Agent receipts. Local tests validate the package contract but do not claim that live canary has run.
+Live acceptance requires a new test Hub and actual Workspace Agent receipts. Local verification does not prove live Alpaca, Wolfram, Workspace, or Notion acceptance and does not claim that a live canary has run.
+
+After a successful verified build, the release builder keeps only the newly built versioned World Memory ZIP in that output directory. It removes only exact sibling `world-memory-autopilot-v*.zip` regular files after atomic verification; unrelated ZIPs, directories, symlinks, and files outside that directory are untouched. A failed build preserves every existing release artifact and leaves no temporary archive.
