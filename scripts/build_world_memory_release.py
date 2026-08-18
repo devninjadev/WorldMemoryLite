@@ -13,7 +13,7 @@ from typing import Iterable
 import zipfile
 
 
-VERSION = "0.12.0"
+VERSION = "0.13.0"
 PACKAGE_NAME = "world-memory-autopilot"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PACKAGE = PROJECT_ROOT / PACKAGE_NAME
@@ -32,11 +32,13 @@ _REQUIRED_RELATIVE_FILES = frozenset(
         "scripts/world_memory/__main__.py",
         "scripts/world_memory/bootstrap.py",
         "scripts/world_memory/cli.py",
+        "scripts/world_memory/discovery.py",
         "scripts/world_memory/feed.py",
         "scripts/world_memory/llm_plan.py",
         "scripts/world_memory/market.py",
         "scripts/world_memory/notion_layout.py",
         "scripts/world_memory/notion_payloads.py",
+        "scripts/world_memory/plugin_market.py",
         "scripts/world_memory/registry.py",
         "scripts/world_memory/windows.py",
         "scripts/world_memory/views.py",
@@ -61,6 +63,9 @@ _UUID = re.compile(
 _SECRETS = (
     re.compile(r"(?i)Bearer\s+[A-Za-z0-9._-]{16,}"),
     re.compile(r"(?i)sk-[A-Za-z0-9_-]{16,}"),
+)
+_VERSIONED_ARCHIVE_NAME = re.compile(
+    rf"^{re.escape(PACKAGE_NAME)}-v[0-9]+(?:\.[0-9]+){{2}}\.zip$"
 )
 
 
@@ -174,6 +179,7 @@ def build_release(package_dir: Path, output: Path) -> dict[str, object]:
     relative_files = _relative_files(package)
     _validate_content(package, relative_files)
     payload = _write_archive(package, destination, relative_files)
+    pruned_archives = _prune_legacy_sibling_archives(destination)
     entries = [f"{PACKAGE_NAME}/{relative.as_posix()}" for relative in relative_files]
     return {
         "version": VERSION,
@@ -181,7 +187,26 @@ def build_release(package_dir: Path, output: Path) -> dict[str, object]:
         "entries": entries,
         "sha256": hashlib.sha256(payload).hexdigest(),
         "size": len(payload),
+        "prunedArchives": pruned_archives,
     }
+
+
+def _prune_legacy_sibling_archives(output: Path) -> list[str]:
+    target_name = f"{PACKAGE_NAME}-v{VERSION}.zip"
+    if output.name != target_name:
+        return []
+    removed: list[str] = []
+    for sibling in sorted(output.parent.iterdir(), key=lambda path: path.name):
+        if (
+            sibling == output
+            or sibling.is_symlink()
+            or not sibling.is_file()
+            or _VERSIONED_ARCHIVE_NAME.fullmatch(sibling.name) is None
+        ):
+            continue
+        sibling.unlink()
+        removed.append(sibling.name)
+    return removed
 
 
 def main() -> int:

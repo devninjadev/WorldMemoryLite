@@ -263,8 +263,112 @@ class BootstrapPlanTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "workspace_id"):
             build_bootstrap_plan("not-a-workspace-uuid")
 
+    def test_bootstrap_plan_sets_the_six_hour_schedule_creation_cadence(self) -> None:
+        plan = build_bootstrap_plan(WORKSPACE_ID)
+
+        self.assertEqual(plan["schedule"], {"creationCadenceMinutes": 360})
+
 
 class ScheduledPromptTests(unittest.TestCase):
+    def test_prompt_executes_capability_planned_market_fallbacks(self) -> None:
+        """Catch a prompt that bypasses the Task 1 plan or Task 2 validator."""
+
+        prompt = render_scheduled_prompt(Registry.from_mapping(REGISTRY))
+        market_step_marker = "6. Read current Alpaca and Wolfram tool access"
+        self.assertIn(market_step_marker, prompt)
+        market_step = market_step_marker + prompt.split(
+            market_step_marker, 1
+        )[1].split("\n7.", 1)[0]
+
+        required_market_steps = (
+            "current Alpaca and Wolfram tool access",
+            "Alpaca first and Wolfram as the insurance provider",
+            "Wolfram Language, then Wolfram Alpha",
+            "validate-market-observation",
+            "at most one validation-guided repair",
+            "No Results Found or graph-only",
+            "Treasury and FRED fallbacks",
+            "do not mix providers, currencies, or value bases",
+        )
+        for text in required_market_steps:
+            with self.subTest(text=text):
+                self.assertIn(text, market_step)
+
+        ordered_effects = (
+            "normalize the five booleans",
+            "market-data-plan",
+            "call only the providers listed",
+            "validate-market-observation",
+            "After an accepted complete observation",
+            "After an accepted partial observation",
+            "collect-market-data",
+        )
+        positions = [market_step.index(text) for text in ordered_effects]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn(
+            "Supply the validated registry and current tool access to market-data-plan",
+            market_step,
+        )
+        self.assertIn(
+            "fetch only its missing fields or components from the next provider",
+            market_step,
+        )
+        self.assertIn(
+            "skipped fallbacks use a truthful not-attempted row",
+            market_step,
+        )
+        self.assertIn(
+            "accepted complete observation maps to provider status ok with its normalized observation unchanged",
+            market_step,
+        )
+        self.assertIn(
+            "accepted partial observation maps to provider status partial with error=market_provider_partial",
+            market_step,
+        )
+        self.assertIn(
+            "intersect raw provider-observed dates only; never synthesize or forward-fill",
+            market_step,
+        )
+        self.assertIn(
+            "Only independent capability chains may run concurrently; attempts within one capability chain are sequential and conditional",
+            market_step,
+        )
+        self.assertIn(
+            "Never persist temporary plugin inputs, raw evidence, normalized candidates, validation envelopes, validator responses",
+            market_step,
+        )
+
+    def test_prompt_maps_schedule_capabilities_to_the_six_validator_shapes(self) -> None:
+        """Catch a prompt that sends Task 1-only capability names to Task 2."""
+
+        prompt = render_scheduled_prompt(Registry.from_mapping(REGISTRY))
+        for mapping in (
+            "credit-risk-pair to equity-pair-series for HYG/LQD with minimumCommonDays=6",
+            "market-breadth-pair to equity-pair-series for RSP/SPY with minimumCommonDays=21",
+            "equity-current-price, equity-daily-bars, equity-pair-series, treasury-yield-curve, economic-time-series, and volatility-term-structure",
+            "does not request equity-latest-quote, options-chain, corporate-actions, market-calendar, or btc-usd",
+            "current-price-only degradation uses equity-current-price and remains partial, never a validated quote",
+        ):
+            with self.subTest(mapping=mapping):
+                self.assertIn(mapping, prompt)
+
+    def test_prompt_executes_descriptor_binding_and_plan_conditioned_collection(self) -> None:
+        prompt = render_scheduled_prompt(Registry.from_mapping(REGISTRY))
+        for required in (
+            "attempts, validatorSupported, validatorCapability, and scheduleEligible",
+            "requiredToolAccess and invocation descriptor",
+            "structured field,evidenceId,evidencePath bindings",
+            "text field,evidenceId,textSpan,excerpt bindings",
+            "raw connector query is invocation-local",
+            "validated sourceLocator.queryDescriptor remains observation provenance",
+            "maximumAgeSeconds",
+            "unchanged plan plus complete capability-instance outcomes",
+            "atomic Treasury, pair, and economic observations",
+            "VIX missing-only component merge with per-component provenance",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, prompt)
+
     def test_prompt_is_self_contained_for_actual_window_and_due_decisions(self) -> None:
         prompt = render_scheduled_prompt(Registry.from_mapping(REGISTRY))
 
@@ -320,8 +424,7 @@ class ScheduledPromptTests(unittest.TestCase):
             "Do not query recent Collections",
             "query Stories Current only when world-memory is due",
             "never use the SQL-shaped input, SQL mode, search, or SQL fallback",
-            "Obtain Google Finance, spreadsheet, and Cboe observations independently, then combine the available provider results as provider-independent partial market data",
-            "provider-independent partial market data",
+            "Supply the validated registry and current tool access to market-data-plan",
             "Cboe failure must not discard Google Finance or spreadsheet success",
             "Use the exact registered VIX spreadsheet publicCsvUrl and expectedSymbols",
             "read-only",
@@ -333,8 +436,10 @@ class ScheduledPromptTests(unittest.TestCase):
             "fetch that exact locator once",
             "Never blind retry",
             "Return a concise user result",
-            "Schedule creation defaults to one hour",
-            "recommend about three hours for deployment",
+            "Schedule creation defaults to six hours",
+            "one Notion search for the exact title World Memory · Notion Native",
+            "resolve-registry-discovery",
+            "world-memory-structure-mismatch",
             "Story integration is due every six hours",
             "Scheduled runs must not perform schema, delete, move, migration, or repair operations",
         ):
@@ -360,6 +465,22 @@ class ScheduledPromptTests(unittest.TestCase):
             "Installation Key",
         ):
             self.assertNotIn(forbidden, prompt)
+
+    def test_prompt_uses_one_generation_with_type_sensitive_report_depth(self) -> None:
+        prompt = render_scheduled_prompt(Registry.from_mapping(REGISTRY))
+
+        for required in (
+            "Key Takeaway uses 3-5 unordered bullets",
+            "시장 현황 and 중장기 맥락 use prose paragraphs without lists",
+            "briefing uses at least 2 prose paragraphs in each narrative section",
+            "world-memory uses at least 3 prose paragraphs in each narrative section",
+            "do not impose a maximum paragraph count",
+            "Do not call a separate LLM quality reviewer",
+            "Ask the model for one temporary LLM plan",
+            "allow at most one validation-guided repair",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, prompt)
 
     def test_prompt_requires_a_validated_registry_instance(self) -> None:
         with self.assertRaisesRegex(ValueError, "registry"):
