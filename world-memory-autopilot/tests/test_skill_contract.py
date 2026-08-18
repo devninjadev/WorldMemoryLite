@@ -254,7 +254,7 @@ class SkillEntrypointTests(unittest.TestCase):
         )
         self.assertTrue(frontmatter["description"].startswith("Use when "))
         self.assertLess(len(raw), 1024)
-        self.assertEqual(skill.count("Version: `0.13.0`"), 1)
+        self.assertEqual(skill.count("Version: `0.14.0`"), 1)
 
     def test_entrypoint_routes_each_detailed_concern_once(self) -> None:
         skill = _read(SKILL_PATH)

@@ -5,7 +5,7 @@ description: Use when running, installing, checking, or explicitly repairing a s
 
 # World Memory Autopilot
 
-Version: `0.13.0`
+Version: `0.14.0`
 
 Use a validated `notion-native-v2` registry as a static address book. Prefer the embedded registry; when it is absent, accept a complete valid registry from ChatGPT memory. If neither contains the location, use only the one-shot read-only recovery in Normal scheduled operation. Data-source locators contain only dataSourceId; never add a database URL or database container ID. The two saved-view locators contain only their validated view URLs, and the market-source locator contains only the immutable approved public VIX CSV address and symbol order. Read [notion-layout.md](references/notion-layout.md) for the Hub, registry, schemas, relations, and views; [collection-and-analysis.md](references/collection-and-analysis.md) for view-mode reads, source normalization, the temporary LLM harness, page content, and Story lifecycle; [market-data.md](references/market-data.md) for independent market observations; and [deployment.md](references/deployment.md) only for recovery, setup, schedule, canary, migration, rollback, or user-approved repair work.
 

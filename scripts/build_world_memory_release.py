@@ -13,7 +13,7 @@ from typing import Iterable
 import zipfile
 
 
-VERSION = "0.13.0"
+VERSION = "0.14.0"
 PACKAGE_NAME = "world-memory-autopilot"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PACKAGE = PROJECT_ROOT / PACKAGE_NAME
