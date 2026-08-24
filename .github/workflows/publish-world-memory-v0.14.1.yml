@@ -14,7 +14,7 @@ env:
   RELEASE_SOURCE_SHA: 259da538f8de553bbfd58f98a90e86af9a3750fe
   RELEASE_TAG: v0.14.1
   RELEASE_ASSET: world-memory-autopilot-v0.14.1.zip
-  RELEASE_SHA256: e37bdfb9c077d1903947a086d2a32bcdbf0dc80ff1ae2a950c4e13a263cca8a0
+  RELEASE_SHA256: fb3e1560548cd89875cd049e71c98462828f2ab872e83526abf6fb7adbb5f7c6
   RELEASE_NOTES: |
     - Restores bounded direct HTTP collection for the five fixed RSS.app CSV feeds.
     - Applies timestamp offsets, half-open report-window filtering, URL deduplication, and per-source freshness diagnostics in deterministic code.
@@ -24,7 +24,7 @@ env:
 
 jobs:
   publish:
-    if: "${{ github.event.head_commit.message == 'release: retry v0.14.1 with scoped regression gate' }}"
+    if: "${{ github.event.head_commit.message == 'release: publish verified v0.14.1 artifact' }}"
     runs-on: ubuntu-latest
     steps:
       - name: Check out exact release source
