@@ -17,6 +17,7 @@ from io import StringIO
 import re
 from typing import Callable, Iterable
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.request import Request, urlopen
 
 
 _CSV_HEADERS = (
@@ -36,6 +37,7 @@ _CSV_HEADERS = (
 )
 _TRACKING_PARAMETERS = {"fbclid", "gclid"}
 _UTC = timezone.utc
+_USER_AGENT = "WorldMemoryAutopilot/0.14.1 (feed contract verifier)"
 _BLOCKED_SUMMARY_TAGS = frozenset({"script", "style", "iframe", "object"})
 _VOID_BLOCKED_SUMMARY_TAGS = frozenset({"embed"})
 _BLOCKED_MARKUP_IN_RAW_TEXT = re.compile(
@@ -270,6 +272,117 @@ def collect_feeds(
     return tuple(outcomes[feed.id] for feed in FEEDS)
 
 
+def direct_http_fetch(url: str, timeout: float) -> bytes:
+    """Fetch one configured RSS.app CSV over a cache-bypassing public GET."""
+
+    if url not in {feed.url for feed in FEEDS}:
+        raise ValueError("url must identify a configured feed")
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
+        raise ValueError("timeout must be a positive number")
+    request = Request(
+        url,
+        headers={
+            "User-Agent": _USER_AGENT,
+            "Accept": "text/csv,text/plain;q=0.9,*/*;q=0.1",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+        },
+        method="GET",
+    )
+    with urlopen(request, timeout=float(timeout)) as response:
+        status = getattr(response, "status", None) or response.getcode()
+        if not isinstance(status, int) or status < 200 or status >= 300:
+            raise OSError("feed response was not successful")
+        return response.read()
+
+
+def collect_feed_window(
+    fetcher: Fetcher,
+    *,
+    window_start: datetime,
+    window_end: datetime,
+    fetched_at: datetime,
+    timeout: float = 20.0,
+    max_workers: int = 5,
+) -> dict[str, object]:
+    """Collect, normalize, window-filter, and diagnose all configured feeds."""
+
+    window_start = _require_aware_datetime(window_start, "window_start").astimezone(_UTC)
+    window_end = _require_aware_datetime(window_end, "window_end").astimezone(_UTC)
+    fetched_at = _require_aware_datetime(fetched_at, "fetched_at").astimezone(_UTC)
+    if window_start >= window_end:
+        raise ValueError("window_start must be before window_end")
+    if window_end > fetched_at:
+        raise ValueError("window_end must not be after fetched_at")
+
+    outcomes = collect_feeds(
+        fetcher,
+        now=fetched_at,
+        timeout=timeout,
+        max_workers=max_workers,
+    )
+    filtered_outcomes: list[FeedOutcome] = []
+    latest_by_source: dict[str, str | None] = {}
+    parsed_counts: dict[str, int] = {}
+    window_counts: dict[str, int] = {}
+    for outcome in outcomes:
+        parsed_counts[outcome.source_id] = len(outcome.items)
+        published = tuple(_item_timestamp(item) for item in outcome.items)
+        latest_by_source[outcome.source_id] = (
+            _utc_iso(max(published)) if published else None
+        )
+        window_items = tuple(
+            item
+            for item, published_at in zip(outcome.items, published)
+            if window_start <= published_at < window_end
+        )
+        window_counts[outcome.source_id] = len(window_items)
+        filtered_outcomes.append(
+            FeedOutcome(
+                source_id=outcome.source_id,
+                source_name=outcome.source_name,
+                status=outcome.status,
+                items=window_items,
+                error=outcome.error,
+                retryable=outcome.retryable,
+            )
+        )
+
+    retained = deduplicate_items(filtered_outcomes)
+    retained_counts = {feed.id: 0 for feed in FEEDS}
+    for item in retained:
+        retained_counts[item.source_id] += 1
+    success_count = sum(outcome.status == "ok" for outcome in outcomes)
+    failure_count = len(outcomes) - success_count
+    status = "failed" if success_count == 0 else "partial" if failure_count else "complete"
+
+    return {
+        "status": status,
+        "windowStart": _utc_iso(window_start),
+        "windowEnd": _utc_iso(window_end),
+        "fetchedAt": _utc_iso(fetched_at),
+        "retrievalMethod": "direct-http",
+        "feedSuccessCount": success_count,
+        "feedFailureCount": failure_count,
+        "itemCount": len(retained),
+        "sourceOutcomes": [
+            {
+                "sourceId": outcome.source_id,
+                "sourceName": outcome.source_name,
+                "status": outcome.status,
+                "parsedItemCount": parsed_counts[outcome.source_id],
+                "windowItemCount": window_counts[outcome.source_id],
+                "retainedItemCount": retained_counts[outcome.source_id],
+                "latestPublishedAt": latest_by_source[outcome.source_id],
+                "error": outcome.error,
+                "retryable": outcome.retryable,
+            }
+            for outcome in outcomes
+        ],
+        "items": [_feed_item_mapping(item) for item in retained],
+    }
+
+
 def deduplicate_items(outcomes: Iterable[FeedOutcome]) -> tuple[FeedItem, ...]:
     """Keep the first configured occurrence of each canonical article URL."""
     seen: set[str] = set()
@@ -284,6 +397,30 @@ def deduplicate_items(outcomes: Iterable[FeedOutcome]) -> tuple[FeedItem, ...]:
             seen.add(canonical_url)
             retained.append(item)
     return tuple(retained)
+
+
+def _item_timestamp(item: FeedItem) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(item.published_at.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("normalized feed timestamp is invalid") from exc
+    return _require_aware_datetime(parsed, "published_at").astimezone(_UTC)
+
+
+def _feed_item_mapping(item: FeedItem) -> dict[str, object]:
+    return {
+        "itemId": item.item_id,
+        "sourceId": item.source_id,
+        "sourceName": item.source_name,
+        "title": item.title,
+        "url": item.url,
+        "publishedAt": item.published_at,
+        "summary": item.summary,
+    }
+
+
+def _utc_iso(value: datetime) -> str:
+    return value.astimezone(_UTC).isoformat().replace("+00:00", "Z")
 
 
 def _collect_one(feed: FeedSpec, fetcher: Fetcher, timeout: float) -> FeedOutcome:
@@ -325,8 +462,8 @@ def _parse_csv(feed: FeedSpec, response: bytes) -> tuple[FeedItem, ...]:
     for row in reader:
         title = _collapsed(row.get("Title"))
         date_text = _collapsed(row.get("Date"))
-        if not title or not date_text:
-            raise ValueError("RSS.app CSV rows require nonempty Title and Date")
+        if not date_text:
+            raise ValueError("RSS.app CSV rows require a nonempty Date")
         source_url = _collapsed(row.get("Link")) or feed.url
         canonical_url = _canonical_url(source_url)
         published_at = _normalize_timestamp(date_text, feed.published_at_offset_minutes)
@@ -334,6 +471,10 @@ def _parse_csv(feed: FeedSpec, response: bytes) -> tuple[FeedItem, ...]:
         if not _collapsed(summary_source):
             summary_source = row.get("Description")
         summary = normalize_feed_summary(summary_source)
+        if not title:
+            title = summary
+        if not title:
+            raise ValueError("RSS.app CSV rows require Title or Description text")
         item_id = "\x1f".join((feed.id, canonical_url, title, published_at))
         items.append(
             FeedItem(

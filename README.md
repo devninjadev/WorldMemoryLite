@@ -1,12 +1,12 @@
-# World Memory Autopilot 0.14.0
+# World Memory Autopilot 0.14.1
 
-`world-memory-autopilot-v0.14.0.zip` installs a SQL-free, Notion-native World Memory skill for ChatGPT Workspace Agents and the official Notion MCP.
+`world-memory-autopilot-v0.14.1.zip` installs a SQL-free, Notion-native World Memory skill for ChatGPT Workspace Agents and the official Notion MCP.
 
 Alpaca and Wolfram are optional connectors. When either is unavailable, the existing official and public fallbacks remain available according to the capability plan; the core Notion persistence boundary remains the official Notion MCP.
 
 ## Install
 
-1. Install `world-memory-autopilot-v0.14.0.zip` as the workspace skill.
+1. Install `world-memory-autopilot-v0.14.1.zip` as the workspace skill.
 2. Connect the official Notion MCP. Allow setup and schema-create permissions only during bootstrap, then reduce access to normal read/write after the live canary; destructive permissions remain disabled.
 3. Run the explicit fresh bootstrap. It creates a new `World Memory · Notion Native` Hub and four database containers, each with an initial data source: `World Memory Collections`, `World Memory Stories`, `World Memory Story Changes`, and `World Memory Reports`.
 4. Configure the saved Notion views `Reports Recent` and `Stories Current`, then complete the finite schema-and-view read-back. Run the read-only public CSV canary and require the ordered VIX symbols `VIX9D`, `VIX`, `VIX3M`, and `VIX6M`; the setup must never mutate that spreadsheet.
@@ -25,6 +25,8 @@ Runtime timestamps and Report window dates are deterministically converted to wh
 
 A partial source failure does not erase successful news or market observations. In particular, Cboe failure does not discard Google Finance or spreadsheet results. Feed descriptions become readable plain text through one HTML boundary before analysis. If all five news feeds fail, the run stops before writing. Storage or source gaps remain visible in the result.
 
+Version 0.14.1 restores deterministic RSS transport inside the skill. `collect-feeds` performs one bounded direct GET for each of the five fixed RSS.app CSV sources, applies source timestamp offsets and the half-open report window in code, deduplicates retained URLs, and reports parsed, in-window, retained, latest-published, and error diagnostics per source. Generic web fetch and web search cannot substitute for RSS transport, but remain available after collection for material-headline verification and enrichment. RSS.app rows with an empty title may use a nonempty normalized description as the title; rows missing both still fail safely.
+
 Each Report uses one generated thesis H1 followed by `Key Takeaway`, `시장 현황`, `중장기 맥락`, `주요 지표들`, `지켜봐야 할 것들`, `관심을 가져볼 만한 이슈들`, and `출처·데이터 안내`. Semantic evidence clusters cover every supplied item exactly once; high-importance evidence can be visible in the Report without forcing a Story write. Confirmed new or reused Reports return their Notion link without duplicating the body, while failed, uncertain, or URL-less delivery returns the generated Markdown fallback.
 
 Normal runs trust ordinary synchronous Notion success, avoid routine verification calls, and keep setup, saved-view changes, schema changes, deletion, movement, and repair outside scheduled operation. The payload adapter preserves each logical leading H1 by sending a harmless empty block before it.
@@ -35,7 +37,7 @@ v0.11.x migrations must pause the existing schedule, explicitly regenerate the `
 
 ## Existing installations and rollback
 
-Old `0.10.x` artifacts are rollback-only archives. Their Hubs and records are not auto-migrated, adopted, merged, or deleted by 0.14.0. Install the new release into a clean Hub, pause the old schedule, verify the new schedule, and keep the old Hub as an independent reference. Rollback means stopping the new schedule and deciding separately whether to reactivate an older one; it does not require deletion.
+Old `0.10.x` artifacts are rollback-only archives. Their Hubs and records are not auto-migrated, adopted, merged, or deleted by 0.14.1. Install the new release into a clean Hub, pause the old schedule, verify the new schedule, and keep the old Hub as an independent reference. Rollback means stopping the new schedule and deciding separately whether to reactivate an older one; it does not require deletion.
 
 Live acceptance requires a new test Hub and actual Workspace Agent receipts. Local verification does not prove live Alpaca, Wolfram, Workspace, or Notion acceptance and does not claim that a live canary has run.
 

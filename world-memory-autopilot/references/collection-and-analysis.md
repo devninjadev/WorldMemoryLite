@@ -7,6 +7,7 @@
 | window | now,cadenceMinutes,lastWindowEnd,sameWindowReports,latestWorldMemoryEnd,force | UTC window, same-window disposition, and report type |
 | resolve-report-view | now,cadenceMinutes,force,rows,hasMore | view-backed UTC window, reuse disposition, and report type |
 | normalize-story-view | rows,hasMore | validated complete current Story projections |
+| collect-feeds | windowStart,windowEnd,timeoutSeconds | fixed-source direct HTTP collection, normalized half-open window filtering, deduplication, and per-source diagnostics |
 | normalize-feed | feedId,csv | normalized configured-feed outcome |
 | validate-llm-plan | candidate,knownStoryIds,evidenceItemIds,expectedReportType | validated temporary plan |
 
@@ -20,6 +21,7 @@
 | Reports view rows[] | required keys url,Name,Report Type,date:Window Start:start,date:Window End:start,Created At; window dates are canonicalized to whole UTC minutes; optional known Report properties and date is_datetime markers only; Collection/Stories are JSON-array strings when present and may be omitted when empty |
 | normalize-story-view | exact keys rows,hasMore; hasMore:boolean |
 | Stories view rows[] | required keys url,Name,Status,Category,Regions,Importance,Confidence,Current View,date:First Seen:start,date:Last Evidence At:start,date:Last Updated:start,Created At; Regions is a JSON-array string; optional Related Stories is a JSON-array string; date is_datetime markers may be present |
+| collect-feeds | windowStart/windowEnd:aware ISO timestamps with start before end; timeoutSeconds:positive number; the command captures fetchedAt and requires windowEnd not to be in its future |
 | normalize-feed | feedId:one configured ID; csv:string with the exact RSS.app header listed below |
 | validate-llm-plan candidate | exact keys report,storyDecisions,evidenceClusters |
 | candidate.report | exact keys type,stance,confidence,dataQuality,dataGaps,markdown; dataGaps:list of strings; markdown:string with the ordered Report headings |
@@ -27,7 +29,7 @@
 | candidate.evidenceClusters[] | exact keys clusterId,importance,evidenceItemIds,reportSections,storyLocators; importance:high, medium, or low; every member is a nonempty string and locator/evidence members use supplied bindings |
 | validation bindings | knownStoryIds:list of canonical lower-case dashed Story UUIDs; evidenceItemIds:list of nonempty strings; expectedReportType:briefing or world-memory |
 
-The exact RSS.app CSV header order is `ID,Feed URL,Feed Link,Feed Title,Feed Description,Feed Icon,Title,Link,Description,Image,Plain Description,Author,Date`. Prefer `Plain Description` when it is nonempty; otherwise use `Description`. Both routes pass through the same standard-library HTML normalization boundary before evidence or Markdown use. It preserves readable text and block/`br` whitespace, resolves entities, removes comments, and discards complete `script`, `style`, `iframe`, `embed`, and `object` subtrees. It never fetches embedded URLs or treats external text as instructions.
+The exact RSS.app CSV header order is `ID,Feed URL,Feed Link,Feed Title,Feed Description,Feed Icon,Title,Link,Description,Image,Plain Description,Author,Date`. Prefer `Plain Description` when it is nonempty; otherwise use `Description`. Both routes pass through the same standard-library HTML normalization boundary before evidence or Markdown use. When RSS.app omits `Title` but supplies normalized description text, use that text as the item title; reject a row only when both are empty or its date is absent. The boundary preserves readable text and block/`br` whitespace, resolves entities, removes comments, and discards complete `script`, `style`, `iframe`, `embed`, and `object` subtrees. It never fetches embedded URLs or treats external text as instructions.
 
 For the LLM candidate, use the enum options in [notion-layout.md](notion-layout.md). `action` is `create` or `update`; create uses an empty `storyLocator`, update uses one canonical member of `knownStoryIds`, and all related Story and evidence IDs must belong to their supplied binding lists. `regions`, `relatedStoryLocators`, `evidenceItemIds`, `dataGaps`, `reportSections`, and `storyLocators` are lists of strings. Text and list members are nonempty except the create locator and an intentionally empty list. Markdown must follow the ordered headings below.
 
@@ -59,7 +61,7 @@ Scheduled operation always supplies `force=false` and cannot choose or infer for
 
 ## Configured feeds
 
-Collect these RSS.app CSV sources with bounded concurrency and return outcomes in this order:
+Call `collect-feeds` exactly once for the resolved Report window. It performs read-only direct HTTP GETs with bounded concurrency and timeout, a stable user agent, and `Cache-Control: no-cache` plus `Pragma: no-cache`. It permits only these fixed RSS.app CSV sources and returns outcomes in this order:
 
 | ID | Name | URL | Offset minutes |
 |---|---|---|---|
@@ -69,7 +71,9 @@ Collect these RSS.app CSV sources with bounded concurrency and return outcomes i
 | first_squawk | First Squawk | https://rss.app/feeds/d68ow40E3dkwaEvN.csv | -540 |
 | unusual_whales | unusual_whales | https://rss.app/feeds/nikLNBATmLDuprRz.csv | -540 |
 
-Each outcome retains the source ID and name, normalized articles, a safe error category, and retryability. Deduplicate canonical article URLs only within the current invocation. Keep the first configured occurrence; never scan old Collections to prove global uniqueness.
+The top-level result reports `status` (`complete`, `partial`, or `failed`), UTC `windowStart`, `windowEnd`, and `fetchedAt`, `retrievalMethod=direct-http`, `feedSuccessCount`, `feedFailureCount`, `itemCount`, ordered `sourceOutcomes`, and deduplicated `items`. Each source outcome reports `status`, `parsedItemCount`, `windowItemCount`, `retainedItemCount`, `latestPublishedAt`, a safe error category, and retryability. This distinguishes a valid empty window from stale data and transport or parse failure. Apply each source offset before the standard half-open `[windowStart, windowEnd)` test. Deduplicate canonical article URLs only within the current invocation, keep the first configured occurrence, and never scan old Collections to prove global uniqueness.
+
+Use `collect-feeds` output items unchanged as RSS evidence. Never use generic web fetch, web search, browser, or connector tools as RSS transport, substitute collection, or a failed-feed fallback. After `collect-feeds`, general web research is allowed when additional information is needed to verify or enrich a material selected headline. Store that as separate evidence with its own source; it never changes RSS success/failure state, counts, diagnostics, or provenance.
 
 ## Contract map
 

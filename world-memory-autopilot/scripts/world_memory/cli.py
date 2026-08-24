@@ -1,8 +1,9 @@
-"""Offline single-object JSON commands for Notion-native World Memory.
+"""Single-object JSON commands for Notion-native World Memory.
 
-The commands in this module only validate, normalize, combine, or describe
-caller-supplied observations. They have no connector, model, public-network,
-or persistent-state client.
+Commands validate, normalize, combine, or describe caller-supplied
+observations. The sole public-network exception is ``collect-feeds``, which
+performs bounded GETs to the five fixed RSS.app CSV URLs. No command has a
+connector, model, or persistent-state client.
 """
 
 from __future__ import annotations
@@ -20,7 +21,15 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from .bootstrap import build_bootstrap_plan, render_scheduled_prompt
 from .discovery import resolve_registry_discovery
-from .feed import FEEDS, FeedItem, FeedOutcome, FeedSpec, normalize_feed_summary
+from .feed import (
+    FEEDS,
+    FeedItem,
+    FeedOutcome,
+    FeedSpec,
+    collect_feed_window,
+    direct_http_fetch,
+    normalize_feed_summary,
+)
 from .llm_plan import validate_llm_plan
 from .market import MarketSnapshot
 from .notion_layout import DATABASE_SCHEMAS, bootstrap_manifest
@@ -54,6 +63,7 @@ _COMMANDS = (
     "normalize-story-view",
     "validate-llm-plan",
     "render-scheduled-prompt",
+    "collect-feeds",
     "normalize-feed",
     "market-data-plan",
     "validate-market-observation",
@@ -121,6 +131,7 @@ def _parser() -> argparse.ArgumentParser:
         "normalize-story-view": "normalize supplied saved Stories view rows",
         "validate-llm-plan": "validate one supplied temporary plan",
         "render-scheduled-prompt": "render the self-contained schedule prompt",
+        "collect-feeds": "directly collect the fixed RSS.app feeds for one window",
         "normalize-feed": "normalize one supplied RSS.app CSV payload",
         "market-data-plan": "describe independent market observations",
         "validate-market-observation": "validate one supplied market observation",
@@ -217,6 +228,7 @@ def _dispatch(command: str, value: dict[str, object]) -> dict[str, object]:
         "normalize-story-view": _normalize_story_view,
         "validate-llm-plan": _validate_llm_plan,
         "render-scheduled-prompt": _render_scheduled_prompt,
+        "collect-feeds": _collect_feeds,
         "normalize-feed": _normalize_feed,
         "market-data-plan": _market_data_plan,
         "validate-market-observation": assess_market_observation,
@@ -346,6 +358,24 @@ def _validate_llm_plan(value: dict[str, object]) -> dict[str, object]:
 def _render_scheduled_prompt(value: dict[str, object]) -> dict[str, object]:
     registry = Registry.from_mapping(value)
     return {"prompt": render_scheduled_prompt(registry)}
+
+
+def _collect_feeds(value: dict[str, object]) -> dict[str, object]:
+    _require_exact_keys(
+        value,
+        frozenset({"windowStart", "windowEnd", "timeoutSeconds"}),
+        "collect-feeds input",
+    )
+    timeout = value["timeoutSeconds"]
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
+        raise ValueError("timeoutSeconds must be a positive number")
+    return collect_feed_window(
+        direct_http_fetch,
+        window_start=_timestamp(value["windowStart"], "windowStart"),
+        window_end=_timestamp(value["windowEnd"], "windowEnd"),
+        fetched_at=datetime.now(_UTC),
+        timeout=float(timeout),
+    )
 
 
 def _normalize_feed(value: dict[str, object]) -> dict[str, object]:
@@ -522,8 +552,8 @@ def _parse_supplied_csv(feed: FeedSpec, text: str) -> tuple[FeedItem, ...]:
     for row in reader:
         title = _collapsed(row.get("Title"))
         date_text = _collapsed(row.get("Date"))
-        if not title or not date_text:
-            raise ValueError("RSS.app CSV row requires title and date")
+        if not date_text:
+            raise ValueError("RSS.app CSV row requires a date")
         source_url = _collapsed(row.get("Link")) or feed.url
         canonical_url = _canonical_article_url(source_url)
         published_at = _feed_timestamp(
@@ -533,6 +563,10 @@ def _parse_supplied_csv(feed: FeedSpec, text: str) -> tuple[FeedItem, ...]:
         if not _collapsed(summary_source):
             summary_source = row.get("Description")
         summary = normalize_feed_summary(summary_source)
+        if not title:
+            title = summary
+        if not title:
+            raise ValueError("RSS.app CSV row requires title or description text")
         items.append(
             FeedItem(
                 item_id="\x1f".join((feed.id, canonical_url, title, published_at)),
