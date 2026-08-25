@@ -54,6 +54,24 @@ class ScheduledPromptFeedContractTests(unittest.TestCase):
         self.assertIn("does not change feed success or failure", prompt)
         self.assertIn("If feedSuccessCount is zero", prompt)
         self.assertIn("latestPublishedAt", prompt)
+        self.assertIn("configured eight RSS.app CSV feeds", prompt)
+        self.assertIn("Reuters | https://rss.app/feeds/_fSiPEQ8FZXQdj4js.csv", prompt)
+        self.assertIn("Dow Jones Personal | https://rss.app/feeds/_m6HwVpkVbkV6H1V6.csv", prompt)
+        self.assertIn("Bloomberg Personal | https://rss.app/feeds/_t07deORnyZW90CjC.csv", prompt)
+
+    def test_keeps_six_hour_reservation_with_345_minute_integration_due(self) -> None:
+        prompt = render_scheduled_prompt(Registry.from_mapping(_REGISTRY))
+
+        self.assertIn("Schedule creation defaults to six hours", prompt)
+        self.assertIn("345 minutes", prompt)
+        self.assertIn(
+            "less than 345 minutes since its Window End means briefing",
+            prompt,
+        )
+        self.assertIn(
+            "exactly 345 minutes or more means world-memory",
+            prompt,
+        )
 
 
 if __name__ == "__main__":

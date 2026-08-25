@@ -65,7 +65,7 @@ Keep setup finite. Do not save provisional addresses, credentials, OAuth tokens,
 
 ## Schedule
 
-Schedule creation defaults to a six-hour interval (`creationCadenceMinutes=360`). Never claim that an existing active schedule changed until its live setting is verified. Each actual cadence defines its own report window; Story integration remains due every six hours.
+Schedule creation defaults to a six-hour interval (`creationCadenceMinutes=360`). Never claim that an existing active schedule changed until its live setting is verified. Each actual cadence defines its own report window; Story integration remains due after 345 elapsed minutes.
 
 The scheduled prompt normally embeds the validated registry and the normal operation boundaries. If both that registry and a complete valid ChatGPT-memory registry are absent, the caller may search Notion exactly once for the exact Hub title, fetch the exact-title candidates, and pass bounded observations to `resolve-registry-discovery`. The helper selects only one workspace-root candidate with the exact v2 marker and exact four-database plus two-view structure; `text` from the connector is normalized only as the transport alias of logical `rich_text`. It returns a recovered registry or one bounded not-found, ambiguous, or structure-mismatch error. It does not contact Notion, write, repair, or persist anything. After this pre-operation recovery boundary, search and broad scans are forbidden again.
 

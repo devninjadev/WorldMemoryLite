@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 
 UTC = timezone.utc
-SIX_HOURS = timedelta(hours=6)
+INTEGRATION_INTERVAL = timedelta(minutes=345)
 
 
 @dataclass(frozen=True)
@@ -62,7 +62,7 @@ def choose_report_type(
     latest_world_memory_end: datetime | None,
     force: bool = False,
 ) -> str:
-    """Choose the six-hour World Memory integration or a regular briefing."""
+    """Choose the 345-minute World Memory integration or a regular briefing."""
     now_utc = canonical_utc_minute(now, "now")
     if not isinstance(force, bool):
         raise ValueError("force must be a boolean")
@@ -74,7 +74,7 @@ def choose_report_type(
     )
     if latest_utc > now_utc:
         raise ValueError("latest_world_memory_end must not be after now")
-    if now_utc - latest_utc >= SIX_HOURS:
+    if now_utc - latest_utc >= INTEGRATION_INTERVAL:
         return "world-memory"
     return "briefing"
 

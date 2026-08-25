@@ -337,7 +337,7 @@ class UserResultTests(unittest.TestCase):
         self.assertEqual(result["reportMarkdown"], "")
         self.assertEqual(result["reportUrl"], REPORT_URL)
         self.assertEqual(result["collectionStatus"], "confirmed")
-        self.assertEqual(result["feedSuccessCount"], 5)
+        self.assertEqual(result["feedSuccessCount"], 8)
         self.assertEqual(result["feedFailureCount"], 0)
         self.assertEqual(result["marketStatus"], "complete")
         self.assertEqual(result["storyCreatedCount"], 1)
@@ -360,7 +360,7 @@ class UserResultTests(unittest.TestCase):
         self.assertEqual(result["reportMarkdown"], "")
         self.assertEqual(result["reportUrl"], REPORT_URL)
         self.assertEqual(result["collectionStatus"], "failed")
-        self.assertEqual(result["feedSuccessCount"], 4)
+        self.assertEqual(result["feedSuccessCount"], 7)
         self.assertEqual(result["feedFailureCount"], 1)
         self.assertEqual(result["marketStatus"], "partial")
         self.assertIn("collection write was not confirmed", result["warnings"])
@@ -432,7 +432,7 @@ class UserResultTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "safe-stop")
         self.assertEqual(result["feedSuccessCount"], 0)
-        self.assertEqual(result["feedFailureCount"], 5)
+        self.assertEqual(result["feedFailureCount"], 8)
         self.assertIn("all configured feeds failed", result["warnings"])
 
     def test_non_url_report_locator_is_not_presented_as_a_report_url(self) -> None:
@@ -485,11 +485,11 @@ class UserResultTests(unittest.TestCase):
                         market=MARKET_OK,
                     )
 
-    def test_fresh_report_requires_exactly_five_configured_feeds_and_one_success(self) -> None:
+    def test_fresh_report_requires_all_configured_feeds_and_one_success(self) -> None:
         confirmed = WriteOutcome("report", "confirmed", REPORT_URL, "")
         for outcomes in ((), ALL_OK_OUTCOMES[:-1], tuple(reversed(ALL_OK_OUTCOMES))):
             with self.subTest(source_ids=tuple(item.source_id for item in outcomes)):
-                with self.assertRaisesRegex(ValueError, "configured five feeds"):
+                with self.assertRaisesRegex(ValueError, "all configured feeds"):
                     build_user_result(
                         report_markdown=REPORT_MARKDOWN,
                         report_outcome=confirmed,
@@ -505,7 +505,7 @@ class UserResultTests(unittest.TestCase):
                 market=MARKET_OK,
             )
 
-    def test_safe_stop_is_prewrite_only_and_requires_all_five_failures(self) -> None:
+    def test_safe_stop_is_prewrite_only_and_requires_all_feed_failures(self) -> None:
         safe_stop = WriteOutcome(
             "safe-stop", "failed", "", "all configured feeds failed"
         )

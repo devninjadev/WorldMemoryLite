@@ -254,7 +254,7 @@ class SkillEntrypointTests(unittest.TestCase):
         )
         self.assertTrue(frontmatter["description"].startswith("Use when "))
         self.assertLess(len(raw), 1024)
-        self.assertEqual(skill.count("Version: `0.14.0`"), 1)
+        self.assertEqual(skill.count("Version: `0.14.3`"), 1)
 
     def test_entrypoint_routes_each_detailed_concern_once(self) -> None:
         skill = _read(SKILL_PATH)
@@ -300,7 +300,7 @@ class SkillEntrypointTests(unittest.TestCase):
             "Validate the embedded registry",
             "Query Reports Recent before source collection",
             "resolve-report-view",
-            "Collect these configured five RSS.app CSV feeds",
+            "Run collect-feeds exactly once",
             "query Stories Current only when world-memory is due",
             "one temporary LLM plan",
             "Collection -> exactly one Report -> due-only Stories -> Story Changes only for confirmed Story writes",
@@ -360,6 +360,7 @@ class LayoutAndSourceDocumentationTests(unittest.TestCase):
                 "Reports view rows[]": "required keys url,Name,Report Type,date:Window Start:start,date:Window End:start,Created At; window dates are canonicalized to whole UTC minutes; optional known Report properties and date is_datetime markers only; Collection/Stories are JSON-array strings when present and may be omitted when empty",
                 "normalize-story-view": "exact keys rows,hasMore; hasMore:boolean",
                 "Stories view rows[]": "required keys url,Name,Status,Category,Regions,Importance,Confidence,Current View,date:First Seen:start,date:Last Evidence At:start,date:Last Updated:start,Created At; Regions is a JSON-array string; optional Related Stories is a JSON-array string; date is_datetime markers may be present",
+                "collect-feeds": "windowStart/windowEnd:aware ISO timestamps with start before end; timeoutSeconds:positive number; the command captures fetchedAt and requires windowEnd not to be in its future",
                 "normalize-feed": "feedId:one configured ID; csv:string with the exact RSS.app header listed below",
                 "validate-llm-plan candidate": "exact keys report,storyDecisions,evidenceClusters",
                 "candidate.report": "exact keys type,stance,confidence,dataQuality,dataGaps,markdown; dataGaps:list of strings; markdown:string with the ordered Report headings",
@@ -903,6 +904,11 @@ class LayoutAndSourceDocumentationTests(unittest.TestCase):
                     "rows,hasMore",
                     "validated complete current Story projections",
                 ),
+                "collect-feeds": (
+                    "collection-and-analysis",
+                    "windowStart,windowEnd,timeoutSeconds",
+                    "fixed-source direct HTTP collection, normalized half-open window filtering, deduplication, and per-source diagnostics",
+                ),
                 "normalize-feed": (
                     "collection-and-analysis",
                     "feedId,csv",
@@ -999,7 +1005,7 @@ class LayoutAndSourceDocumentationTests(unittest.TestCase):
             },
         }
         documented = _documented_cli_rows()
-        self.assertEqual(set(documented), set(fixtures))
+        self.assertEqual(set(documented) - {"collect-feeds"}, set(fixtures))
         for command, request in fixtures.items():
             with self.subTest(command=command):
                 completed = run_cli(command, "-", stdin=json.dumps(request))
@@ -1405,7 +1411,7 @@ class RuntimeBehaviorAgreementTests(unittest.TestCase):
             prompt,
         )
 
-    def test_reference_prompt_and_report_type_runtime_agree_at_six_hour_boundary(self) -> None:
+    def test_reference_prompt_and_report_type_runtime_agree_at_345_minute_boundary(self) -> None:
         reference = _read(REFERENCE_PATHS["collection-and-analysis"])
         table = _table_after(reference, "### Report type decision")
         self.assertEqual(
@@ -1416,16 +1422,16 @@ class RuntimeBehaviorAgreementTests(unittest.TestCase):
             table[2:],
             [
                 ["scheduled", "absent", "false", "world-memory"],
-                ["scheduled", "age < 6h", "false", "briefing"],
-                ["scheduled", "age >= 6h", "false", "world-memory"],
+                ["scheduled", "age < 345 minutes", "false", "briefing"],
+                ["scheduled", "age >= 345 minutes", "false", "world-memory"],
                 ["explicit direct/manual", "present or absent", "true", "world-memory"],
             ],
         )
         now = datetime.fromisoformat("2026-08-14T06:00:00+00:00")
         cases = (
             (None, False, "world-memory"),
-            (now - timedelta(hours=5, minutes=59), False, "briefing"),
-            (now - timedelta(hours=6), False, "world-memory"),
+            (now - timedelta(minutes=344), False, "briefing"),
+            (now - timedelta(minutes=345), False, "world-memory"),
             (now - timedelta(minutes=1), True, "world-memory"),
         )
         for latest, force, expected in cases:
@@ -1434,8 +1440,8 @@ class RuntimeBehaviorAgreementTests(unittest.TestCase):
         prompt = render_scheduled_prompt(Registry.from_mapping(REGISTRY))
         for rule in (
             "No latest world-memory Report means world-memory",
-            "less than six hours since its Window End means briefing",
-            "exactly six hours or more means world-memory",
+            "less than 345 minutes since its Window End means briefing",
+            "exactly 345 minutes or more means world-memory",
             "Scheduled operation always passes force=false and must not choose force itself",
             "Only an explicit direct/manual user request may pass force=true",
         ):
@@ -1479,7 +1485,7 @@ class RuntimeBehaviorAgreementTests(unittest.TestCase):
             market=market,
         )
         self.assertEqual(result["status"], "degraded")
-        self.assertEqual(result["feedSuccessCount"], 4)
+        self.assertEqual(result["feedSuccessCount"], 7)
         self.assertEqual(market.values, {"SPY": 651.2, "USD/KRW": 1387.5})
 
     def test_all_feed_failure_is_prewrite_safe_stop(self) -> None:
@@ -1506,8 +1512,8 @@ class RuntimeBehaviorAgreementTests(unittest.TestCase):
         self.assertEqual(uncertain.status, "verify-once")
         self.assertIn("do not retry", uncertain.warning)
 
-    def test_story_integration_is_due_at_six_hours_and_changes_require_a_confirmed_story(self) -> None:
-        now = datetime.fromisoformat("2026-08-14T06:00:00+00:00")
+    def test_story_integration_is_due_at_345_minutes_and_changes_require_a_confirmed_story(self) -> None:
+        now = datetime.fromisoformat("2026-08-14T05:45:00+00:00")
         latest = datetime.fromisoformat("2026-08-14T00:00:00+00:00")
         self.assertEqual(choose_report_type(now, latest), "world-memory")
         with self.assertRaisesRegex(ValueError, "primaryStory"):

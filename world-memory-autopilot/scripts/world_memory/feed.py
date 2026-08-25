@@ -37,7 +37,7 @@ _CSV_HEADERS = (
 )
 _TRACKING_PARAMETERS = {"fbclid", "gclid"}
 _UTC = timezone.utc
-_USER_AGENT = "WorldMemoryAutopilot/0.14.1 (feed contract verifier)"
+_USER_AGENT = "WorldMemoryAutopilot/0.14.3 (feed contract verifier)"
 _BLOCKED_SUMMARY_TAGS = frozenset({"script", "style", "iframe", "object"})
 _VOID_BLOCKED_SUMMARY_TAGS = frozenset({"embed"})
 _BLOCKED_MARKUP_IN_RAW_TEXT = re.compile(
@@ -104,6 +104,9 @@ FEEDS: tuple[FeedSpec, ...] = (
     FeedSpec("wall_st_engine", "Wall St Engine", "https://rss.app/feeds/Hf52VRUllNu7gABF.csv"),
     FeedSpec("first_squawk", "First Squawk", "https://rss.app/feeds/d68ow40E3dkwaEvN.csv", -540),
     FeedSpec("unusual_whales", "unusual_whales", "https://rss.app/feeds/nikLNBATmLDuprRz.csv", -540),
+    FeedSpec("reuters", "Reuters", "https://rss.app/feeds/_fSiPEQ8FZXQdj4js.csv"),
+    FeedSpec("dow_jones", "Dow Jones Personal", "https://rss.app/feeds/_m6HwVpkVbkV6H1V6.csv"),
+    FeedSpec("bloomberg", "Bloomberg Personal", "https://rss.app/feeds/_t07deORnyZW90CjC.csv"),
 )
 
 
@@ -130,6 +133,7 @@ class FeedOutcome:
     items: tuple[FeedItem, ...]
     error: str
     retryable: bool
+    rejected_item_count: int = 0
 
 
 Fetcher = Callable[[str, float], bytes]
@@ -244,7 +248,7 @@ def collect_feeds(
     *,
     now: datetime,
     timeout: float = 20.0,
-    max_workers: int = 5,
+    max_workers: int = 8,
 ) -> tuple[FeedOutcome, ...]:
     """Fetch all configured CSV feeds concurrently and return configured order."""
     _require_aware_datetime(now, "now")
@@ -303,7 +307,7 @@ def collect_feed_window(
     window_end: datetime,
     fetched_at: datetime,
     timeout: float = 20.0,
-    max_workers: int = 5,
+    max_workers: int = 8,
 ) -> dict[str, object]:
     """Collect, normalize, window-filter, and diagnose all configured feeds."""
 
@@ -345,6 +349,7 @@ def collect_feed_window(
                 items=window_items,
                 error=outcome.error,
                 retryable=outcome.retryable,
+                rejected_item_count=outcome.rejected_item_count,
             )
         )
 
@@ -371,6 +376,7 @@ def collect_feed_window(
                 "sourceName": outcome.source_name,
                 "status": outcome.status,
                 "parsedItemCount": parsed_counts[outcome.source_id],
+                "rejectedItemCount": outcome.rejected_item_count,
                 "windowItemCount": window_counts[outcome.source_id],
                 "retainedItemCount": retained_counts[outcome.source_id],
                 "latestPublishedAt": latest_by_source[outcome.source_id],
@@ -435,19 +441,21 @@ def _collect_one(feed: FeedSpec, fetcher: Fetcher, timeout: float) -> FeedOutcom
         )
 
     try:
+        items, rejected_item_count = _parse_csv(feed, response)
         return FeedOutcome(
             source_id=feed.id,
             source_name=feed.name,
             status="ok",
-            items=_parse_csv(feed, response),
+            items=items,
             error="",
             retryable=False,
+            rejected_item_count=rejected_item_count,
         )
     except (TypeError, UnicodeError, ValueError, csv.Error) as exc:
         return _error_outcome(feed, exc, category="feed_parse", retryable=False)
 
 
-def _parse_csv(feed: FeedSpec, response: bytes) -> tuple[FeedItem, ...]:
+def _parse_csv(feed: FeedSpec, response: bytes) -> tuple[tuple[FeedItem, ...], int]:
     if not isinstance(response, bytes):
         raise TypeError("feed response must be UTF-8 bytes")
     text = response.decode("utf-8", errors="strict")
@@ -459,35 +467,43 @@ def _parse_csv(feed: FeedSpec, response: bytes) -> tuple[FeedItem, ...]:
         raise ValueError("RSS.app CSV header does not match the required schema")
 
     items: list[FeedItem] = []
+    rejected_item_count = 0
     for row in reader:
-        title = _collapsed(row.get("Title"))
-        date_text = _collapsed(row.get("Date"))
-        if not date_text:
-            raise ValueError("RSS.app CSV rows require a nonempty Date")
-        source_url = _collapsed(row.get("Link")) or feed.url
-        canonical_url = _canonical_url(source_url)
-        published_at = _normalize_timestamp(date_text, feed.published_at_offset_minutes)
-        summary_source = row.get("Plain Description")
-        if not _collapsed(summary_source):
-            summary_source = row.get("Description")
-        summary = normalize_feed_summary(summary_source)
-        if not title:
-            title = summary
-        if not title:
-            raise ValueError("RSS.app CSV rows require Title or Description text")
-        item_id = "\x1f".join((feed.id, canonical_url, title, published_at))
-        items.append(
-            FeedItem(
-                item_id=item_id,
-                source_id=feed.id,
-                source_name=feed.name,
-                title=title,
-                url=source_url,
-                published_at=published_at,
-                summary=summary,
+        try:
+            title = _collapsed(row.get("Title"))
+            date_text = _collapsed(row.get("Date"))
+            if not date_text:
+                raise ValueError("RSS.app CSV rows require a nonempty Date")
+            source_url = _collapsed(row.get("Link")) or feed.url
+            canonical_url = _canonical_url(source_url)
+            published_at = _normalize_timestamp(
+                date_text, feed.published_at_offset_minutes
             )
-        )
-    return tuple(items)
+            summary_source = row.get("Plain Description")
+            if not _collapsed(summary_source):
+                summary_source = row.get("Description")
+            summary = normalize_feed_summary(summary_source)
+            if not title:
+                title = summary
+            if not title:
+                raise ValueError("RSS.app CSV rows require Title or Description text")
+            item_id = "\x1f".join((feed.id, canonical_url, title, published_at))
+            items.append(
+                FeedItem(
+                    item_id=item_id,
+                    source_id=feed.id,
+                    source_name=feed.name,
+                    title=title,
+                    url=source_url,
+                    published_at=published_at,
+                    summary=summary,
+                )
+            )
+        except (TypeError, UnicodeError, ValueError):
+            rejected_item_count += 1
+    if rejected_item_count and not items:
+        raise ValueError("RSS.app CSV contains rows but none are valid")
+    return tuple(items), rejected_item_count
 
 
 def _normalize_timestamp(value: str, offset_minutes: int) -> str:

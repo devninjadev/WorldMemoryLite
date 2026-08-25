@@ -107,7 +107,8 @@ class MetadataAndAssetTests(unittest.TestCase):
             "notion-native-v2",
             "same-window Report reuse",
             "partial-source continuation",
-            "six-hour Story integration",
+            "six-hour reservation",
+            "345-minute Story integration",
             "saved Notion views",
             "SQL-free",
         ):
@@ -129,7 +130,7 @@ class DocumentationReleaseBoundaryTests(unittest.TestCase):
     def test_readme_names_the_exact_install_artifact_and_operating_model(self) -> None:
         readme = _read(README)
         required = (
-            "world-memory-autopilot-v0.14.0.zip",
+            "world-memory-autopilot-v0.14.3.zip",
             "World Memory · Notion Native",
             "World Memory Collections",
             "World Memory Stories",
@@ -138,7 +139,7 @@ class DocumentationReleaseBoundaryTests(unittest.TestCase):
             "notion-native-v2",
             "six-hour default interval",
             "creationCadenceMinutes=360",
-            "six-hour Story",
+            "345 elapsed minutes",
             "partial source",
             "0.10.x",
             "rollback-only",
@@ -171,6 +172,8 @@ class DocumentationReleaseBoundaryTests(unittest.TestCase):
         )
 
     def test_local_agents_constitution_is_short_untracked_and_outside_package(self) -> None:
+        if not AGENTS.is_file():
+            self.skipTest("local untracked AGENTS.md is absent in a clean clone")
         lines = _read(AGENTS).splitlines()
         self.assertGreaterEqual(len(lines), 60)
         self.assertLessEqual(len(lines), 90)

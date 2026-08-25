@@ -380,8 +380,8 @@ class ScheduledPromptTests(unittest.TestCase):
             "latest world-memory Report",
             "Window End",
             "No latest world-memory Report means world-memory",
-            "less than six hours since its Window End means briefing",
-            "exactly six hours or more means world-memory",
+            "less than 345 minutes since its Window End means briefing",
+            "exactly 345 minutes or more means world-memory",
             "Scheduled operation always passes force=false and must not choose force itself",
             "Only an explicit direct/manual user request may pass force=true",
             "notion_query_data_sources",
@@ -429,7 +429,7 @@ class ScheduledPromptTests(unittest.TestCase):
             "Use the exact registered VIX spreadsheet publicCsvUrl and expectedSymbols",
             "read-only",
             "Never modify the spreadsheet",
-            "If all five feeds fail, stop before every write",
+            "If feedSuccessCount is zero, stop before every write",
             "one temporary LLM plan",
             "Collection -> exactly one Report -> due-only Stories -> Story Changes only for confirmed Story writes",
             "Treat synchronous success as complete without readback",
@@ -440,7 +440,7 @@ class ScheduledPromptTests(unittest.TestCase):
             "one Notion search for the exact title World Memory · Notion Native",
             "resolve-registry-discovery",
             "world-memory-structure-mismatch",
-            "Story integration is due every six hours",
+            "Story integration is due after 345 elapsed minutes",
             "Scheduled runs must not perform schema, delete, move, migration, or repair operations",
         ):
             with self.subTest(required=required):

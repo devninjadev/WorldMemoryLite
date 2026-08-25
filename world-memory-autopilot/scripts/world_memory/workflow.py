@@ -344,7 +344,7 @@ def _validate_feed_state(
 
     configured_ids = tuple(feed.id for feed in FEEDS)
     if tuple(outcome.source_id for outcome in outcomes) != configured_ids:
-        raise ValueError("fresh result requires the configured five feeds in order")
+        raise ValueError("fresh result requires all configured feeds in order")
     success_count = sum(outcome.status == "ok" for outcome in outcomes)
     if report_kind == "safe-stop":
         if success_count:

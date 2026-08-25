@@ -3,4 +3,4 @@ interface:
   short_description: "Readable market narratives in Notion"
   icon_small: "./assets/icon.svg"
   icon_large: "./assets/icon.svg"
-  default_prompt: "Use $world-memory-autopilot with notion-native-v2 saved Notion views for SQL-free same-window Report reuse, partial-source continuation, and six-hour Story integration."
+  default_prompt: "Use $world-memory-autopilot with notion-native-v2 saved Notion views for SQL-free same-window Report reuse, partial-source continuation, a six-hour reservation, and 345-minute Story integration."

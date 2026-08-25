@@ -63,13 +63,16 @@ class FeedCollectionTests(unittest.TestCase):
                 ("wall_st_engine", "Wall St Engine", "https://rss.app/feeds/Hf52VRUllNu7gABF.csv", 0),
                 ("first_squawk", "First Squawk", "https://rss.app/feeds/d68ow40E3dkwaEvN.csv", -540),
                 ("unusual_whales", "unusual_whales", "https://rss.app/feeds/nikLNBATmLDuprRz.csv", -540),
+                ("reuters", "Reuters", "https://rss.app/feeds/_fSiPEQ8FZXQdj4js.csv", 0),
+                ("dow_jones", "Dow Jones Personal", "https://rss.app/feeds/_m6HwVpkVbkV6H1V6.csv", 0),
+                ("bloomberg", "Bloomberg Personal", "https://rss.app/feeds/_t07deORnyZW90CjC.csv", 0),
             ),
         )
 
     def test_collects_all_sources_in_parallel_but_returns_configured_order(self) -> None:
         outcomes = collect_feeds(fetcher_with_out_of_order_completion, now=NOW)
         self.assertEqual(tuple(item.source_id for item in outcomes), tuple(feed.id for feed in FEEDS))
-        self.assertEqual(sum(outcome.status == "ok" for outcome in outcomes), 5)
+        self.assertEqual(sum(outcome.status == "ok" for outcome in outcomes), 8)
 
     def test_one_feed_failure_preserves_other_items(self) -> None:
         outcomes = collect_feeds(fetcher_failing(FEEDS[2].id), now=NOW)

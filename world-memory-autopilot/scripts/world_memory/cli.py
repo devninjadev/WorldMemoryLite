@@ -2,7 +2,7 @@
 
 Commands validate, normalize, combine, or describe caller-supplied
 observations. The sole public-network exception is ``collect-feeds``, which
-performs bounded GETs to the five fixed RSS.app CSV URLs. No command has a
+performs bounded GETs to the eight fixed RSS.app CSV URLs. No command has a
 connector, model, or persistent-state client.
 """
 

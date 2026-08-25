@@ -85,17 +85,17 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(window.start.tzinfo, timezone.utc)
         self.assertEqual(window.end.tzinfo, timezone.utc)
 
-    def test_due_boundary_is_exactly_six_hours(self) -> None:
+    def test_due_boundary_is_exactly_345_minutes(self) -> None:
         latest = dt("2026-08-14T00:00:00Z")
         self.assertEqual(
-            choose_report_type(dt("2026-08-14T05:59:59Z"), latest), "briefing"
+            choose_report_type(dt("2026-08-14T05:44:59Z"), latest), "briefing"
         )
         self.assertEqual(
-            choose_report_type(dt("2026-08-14T06:00:00Z"), latest), "world-memory"
+            choose_report_type(dt("2026-08-14T05:45:00Z"), latest), "world-memory"
         )
         self.assertEqual(
             choose_report_type(
-                dt("2026-08-14T06:00:10Z"),
+                dt("2026-08-14T05:45:10Z"),
                 dt("2026-08-14T00:00:59.999999Z"),
             ),
             "world-memory",

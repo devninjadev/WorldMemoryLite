@@ -18,7 +18,7 @@ class CollectFeedsCliTests(unittest.TestCase):
             "windowEnd": "2026-08-25T02:00:00Z",
             "fetchedAt": "2026-08-25T02:01:00Z",
             "retrievalMethod": "direct-http",
-            "feedSuccessCount": 5,
+            "feedSuccessCount": 8,
             "feedFailureCount": 0,
             "itemCount": 0,
             "sourceOutcomes": [],

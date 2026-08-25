@@ -12,6 +12,16 @@ from world_memory import feed as feed_module
 
 
 _UTC = timezone.utc
+_EXPECTED_FEEDS = (
+    ("financial_juice", "FinancialJuice", "https://rss.app/feeds/5VaycMAa8SwPhOAP.csv", 0),
+    ("walter_bloomberg", "Walter Bloomberg", "https://rss.app/feeds/YcRRdWN5eSO3o2LP.csv", 0),
+    ("wall_st_engine", "Wall St Engine", "https://rss.app/feeds/Hf52VRUllNu7gABF.csv", 0),
+    ("first_squawk", "First Squawk", "https://rss.app/feeds/d68ow40E3dkwaEvN.csv", -540),
+    ("unusual_whales", "unusual_whales", "https://rss.app/feeds/nikLNBATmLDuprRz.csv", -540),
+    ("reuters", "Reuters", "https://rss.app/feeds/_fSiPEQ8FZXQdj4js.csv", 0),
+    ("dow_jones", "Dow Jones Personal", "https://rss.app/feeds/_m6HwVpkVbkV6H1V6.csv", 0),
+    ("bloomberg", "Bloomberg Personal", "https://rss.app/feeds/_t07deORnyZW90CjC.csv", 0),
+)
 _HEADERS = (
     "ID",
     "Feed URL",
@@ -39,6 +49,15 @@ def _csv(*rows: dict[str, str]) -> bytes:
 
 
 class FeedWindowCollectionTests(unittest.TestCase):
+    def test_configures_eight_article_and_relay_feeds_in_order(self) -> None:
+        self.assertEqual(
+            tuple(
+                (feed.id, feed.name, feed.url, feed.published_at_offset_minutes)
+                for feed in feed_module.FEEDS
+            ),
+            _EXPECTED_FEEDS,
+        )
+
     def test_direct_fetch_uses_fixed_url_and_cache_bypass_headers(self) -> None:
         class Response:
             status = 200
@@ -63,7 +82,7 @@ class FeedWindowCollectionTests(unittest.TestCase):
         self.assertEqual(request.get_method(), "GET")
         self.assertEqual(request.get_header("Cache-control"), "no-cache")
         self.assertEqual(request.get_header("Pragma"), "no-cache")
-        self.assertIn("WorldMemoryAutopilot/0.14.1", request.get_header("User-agent"))
+        self.assertIn("WorldMemoryAutopilot/0.14.3", request.get_header("User-agent"))
         self.assertEqual(open_url.call_args.kwargs["timeout"], 13.0)
         with self.assertRaisesRegex(ValueError, "configured feed"):
             feed_module.direct_http_fetch("https://example.com/not-configured.csv", 13)
@@ -103,7 +122,7 @@ class FeedWindowCollectionTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "complete")
         self.assertEqual(result["retrievalMethod"], "direct-http")
-        self.assertEqual(result["feedSuccessCount"], 5)
+        self.assertEqual(result["feedSuccessCount"], 8)
         self.assertEqual(result["feedFailureCount"], 0)
         self.assertEqual(result["itemCount"], 2)
         self.assertEqual(
@@ -144,6 +163,37 @@ class FeedWindowCollectionTests(unittest.TestCase):
         self.assertEqual(result["items"][0]["title"], "Fallback headline")
         self.assertEqual(result["items"][0]["summary"], "Fallback headline")
 
+    def test_quarantines_malformed_rows_without_discarding_valid_feed_items(self) -> None:
+        payloads = {feed.url: _csv() for feed in feed_module.FEEDS}
+        payloads[feed_module.FEEDS[6].url] = _csv(
+            {
+                "ID": "valid",
+                "Title": "Valid Dow Jones item",
+                "Link": "https://example.com/valid",
+                "Date": "2026-08-25T01:00:00Z",
+            },
+            {
+                "ID": "missing-date",
+                "Title": "Undated Dow Jones item",
+                "Link": "https://example.com/missing-date",
+                "Date": "",
+            },
+        )
+
+        result = feed_module.collect_feed_window(
+            lambda url, timeout: payloads[url],
+            window_start=datetime(2026, 8, 25, 0, 0, tzinfo=_UTC),
+            window_end=datetime(2026, 8, 25, 2, 0, tzinfo=_UTC),
+            fetched_at=datetime(2026, 8, 25, 2, 1, tzinfo=_UTC),
+        )
+
+        dow_jones = result["sourceOutcomes"][6]
+        self.assertEqual(dow_jones["status"], "ok")
+        self.assertEqual(dow_jones["parsedItemCount"], 1)
+        self.assertEqual(dow_jones["rejectedItemCount"], 1)
+        self.assertEqual(dow_jones["retainedItemCount"], 1)
+        self.assertEqual(result["itemCount"], 1)
+
     def test_preserves_successes_when_one_feed_fails(self) -> None:
         failing_url = feed_module.FEEDS[1].url
 
@@ -161,7 +211,7 @@ class FeedWindowCollectionTests(unittest.TestCase):
         )
 
         self.assertEqual(result["status"], "partial")
-        self.assertEqual(result["feedSuccessCount"], 4)
+        self.assertEqual(result["feedSuccessCount"], 7)
         self.assertEqual(result["feedFailureCount"], 1)
         failure = result["sourceOutcomes"][1]
         self.assertEqual(failure["status"], "error")
@@ -185,7 +235,7 @@ class FeedWindowCollectionTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "failed")
         self.assertEqual(result["feedSuccessCount"], 0)
-        self.assertEqual(result["feedFailureCount"], 5)
+        self.assertEqual(result["feedFailureCount"], 8)
         self.assertEqual(result["itemCount"], 0)
         self.assertEqual(result["items"], [])
 

@@ -50,11 +50,13 @@ Reports Recent is the sole normal read authority for Report window and due decis
 
 ### Report type decision
 
+The external automation reservation remains six hours (`cadenceMinutes=360`). Treat Story integration as due after 345 elapsed minutes so scheduler delivery variance cannot demote a nominal six-hour run to a briefing.
+
 | Invocation | Latest world-memory Window End | Force | Report type |
 |---|---|---|---|
 | scheduled | absent | false | world-memory |
-| scheduled | age < 6h | false | briefing |
-| scheduled | age >= 6h | false | world-memory |
+| scheduled | age < 345 minutes | false | briefing |
+| scheduled | age >= 345 minutes | false | world-memory |
 | explicit direct/manual | present or absent | true | world-memory |
 
 Scheduled operation always supplies `force=false` and cannot choose or infer force. Only an explicit direct/manual user request may supply `force=true`; that request bypasses the elapsed-time test but never bypasses same-window reuse.
@@ -70,8 +72,11 @@ Call `collect-feeds` exactly once for the resolved Report window. It performs re
 | wall_st_engine | Wall St Engine | https://rss.app/feeds/Hf52VRUllNu7gABF.csv | 0 |
 | first_squawk | First Squawk | https://rss.app/feeds/d68ow40E3dkwaEvN.csv | -540 |
 | unusual_whales | unusual_whales | https://rss.app/feeds/nikLNBATmLDuprRz.csv | -540 |
+| reuters | Reuters | https://rss.app/feeds/_fSiPEQ8FZXQdj4js.csv | 0 |
+| dow_jones | Dow Jones Personal | https://rss.app/feeds/_m6HwVpkVbkV6H1V6.csv | 0 |
+| bloomberg | Bloomberg Personal | https://rss.app/feeds/_t07deORnyZW90CjC.csv | 0 |
 
-The top-level result reports `status` (`complete`, `partial`, or `failed`), UTC `windowStart`, `windowEnd`, and `fetchedAt`, `retrievalMethod=direct-http`, `feedSuccessCount`, `feedFailureCount`, `itemCount`, ordered `sourceOutcomes`, and deduplicated `items`. Each source outcome reports `status`, `parsedItemCount`, `windowItemCount`, `retainedItemCount`, `latestPublishedAt`, a safe error category, and retryability. This distinguishes a valid empty window from stale data and transport or parse failure. Apply each source offset before the standard half-open `[windowStart, windowEnd)` test. Deduplicate canonical article URLs only within the current invocation, keep the first configured occurrence, and never scan old Collections to prove global uniqueness.
+The top-level result reports `status` (`complete`, `partial`, or `failed`), UTC `windowStart`, `windowEnd`, and `fetchedAt`, `retrievalMethod=direct-http`, `feedSuccessCount`, `feedFailureCount`, `itemCount`, ordered `sourceOutcomes`, and deduplicated `items`. Each source outcome reports `status`, `parsedItemCount`, `rejectedItemCount`, `windowItemCount`, `retainedItemCount`, `latestPublishedAt`, a safe error category, and retryability. A malformed row is quarantined while valid rows from that feed remain usable; a feed whose nonempty payload contains no valid rows remains a parse failure. This distinguishes a valid empty window from stale data, rejected malformed rows, and transport or parse failure. Apply each source offset before the standard half-open `[windowStart, windowEnd)` test. Deduplicate canonical article URLs only within the current invocation, keep the first configured occurrence, and never scan old Collections to prove global uniqueness.
 
 Use `collect-feeds` output items unchanged as RSS evidence. Never use generic web fetch, web search, browser, or connector tools as RSS transport, substitute collection, or a failed-feed fallback. After `collect-feeds`, general web research is allowed when additional information is needed to verify or enrich a material selected headline. Store that as separate evidence with its own source; it never changes RSS success/failure state, counts, diagnostics, or provenance.
 
@@ -79,9 +84,9 @@ Use `collect-feeds` output items unchanged as RSS evidence. Never use generic we
 
 | Contract | Operational rule |
 |---|---|
-| partial-feed | One to four failed feeds preserve every successful item and become explicit Data Gaps. |
-| all-feed-safe-stop | Five failed feeds stop before Collection, Report, Story, or Story Change writes. |
-| story-due-confirmed-change | Story integration runs only when six hours are due, and each Story Change follows a confirmed Story create or update. |
+| partial-feed | One to seven failed feeds preserve every successful item and become explicit Data Gaps. |
+| all-feed-safe-stop | Eight failed feeds stop before Collection, Report, Story, or Story Change writes. |
+| story-due-confirmed-change | Story integration runs only when 345 elapsed minutes are due, and each Story Change follows a confirmed Story create or update. |
 
 ## Collection
 
@@ -135,7 +140,7 @@ Create exactly one `briefing` or `world-memory` Report for a new window. If Repo
 
 ## Story lifecycle
 
-Briefing runs do not change Stories. A due or explicitly forced six-hour integration may create or update a Story only when the evidence changes a durable thesis, importance, confidence, status, transmission path, invalidation condition, or relationship. A Story remains a readable current-state projection with exactly one H1 and these ordered sections:
+Briefing runs do not change Stories. A due or explicitly forced 345-minute integration may create or update a Story only when the evidence changes a durable thesis, importance, confidence, status, transmission path, invalidation condition, or relationship. A Story remains a readable current-state projection with exactly one H1 and these ordered sections:
 
 `# 현재 판단`, `## 전파 경로`, `## 강화 근거`, `## 반대 근거와 불확실성`, `## 무효화 조건`, `## 다음 확인점`, `## 관련 Story`.
 
