@@ -1,0 +1,62 @@
+name: Publish World Memory v0.14.3
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/publish-world-memory-v0.14.3.yml"
+
+permissions:
+  contents: write
+
+env:
+  RELEASE_SOURCE_SHA: c9d5d2303e5f26b7fd9af2c866589d6981bd3ff8
+  RELEASE_TAG: v0.14.3
+  RELEASE_ASSET: world-memory-autopilot-v0.14.3.zip
+  RELEASE_SHA256: 3bc30a6d4339263f0c39c3687a61a7157bfe8cd6adf956f6c2712fb6f92fd30c
+  RELEASE_NOTES: |
+    - Keeps the external automation reservation at exactly six hours while making Story integration due after 345 elapsed minutes.
+    - Expands deterministic RSS.app CSV collection from five to eight sources with Reuters, Dow Jones Personal, and Bloomberg Personal.
+    - Quarantines malformed feed rows without discarding valid rows from the same source and reports rejectedItemCount diagnostics.
+    - Preserves half-open report-window filtering, timestamp offsets, URL deduplication, partial-source continuation, and post-collection web enrichment.
+    - Adds regression coverage for the eight-feed contract, the 345-minute boundary, and malformed-row isolation.
+
+jobs:
+  publish:
+    if: "${{ github.event.head_commit.message == 'release: publish verified v0.14.3 artifact' }}"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out exact release source
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          git fetch --depth=1 origin "$RELEASE_SOURCE_SHA"
+          git checkout --detach FETCH_HEAD
+
+      - name: Verify source and build deterministic archive
+        run: |
+          set -euo pipefail
+          PYTHONPATH=.:world-memory-autopilot/scripts python3 -m unittest discover -s tests -q
+          (
+            cd world-memory-autopilot
+            PYTHONPATH=scripts python3 -m unittest discover -s tests -q
+          )
+          python3 scripts/build_world_memory_release.py
+          printf '%s  %s\n' "$RELEASE_SHA256" "$RELEASE_ASSET" | sha256sum -c -
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" "$RELEASE_ASSET" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$RELEASE_SOURCE_SHA" \
+            --title "World Memory Autopilot v0.14.3" \
+            --latest \
+            --notes "$RELEASE_NOTES"
+          gh release view "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json tagName,name,url,isDraft,isPrerelease,targetCommitish,assets
