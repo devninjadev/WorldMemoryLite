@@ -1,0 +1,114 @@
+name: Release World Memory Autopilot v0.14.4
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/release-v0.14.4.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-world-memory-v0.14.4
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'devninjadev/WorldMemoryLite'
+    runs-on: ubuntu-latest
+    env:
+      SOURCE_SHA: 5a10abc52745158e4cd666c0d63a755de582e218
+      TAG: v0.14.4
+      ASSET: world-memory-autopilot-v0.14.4.zip
+      EXPECTED_SIZE: "100625"
+      WORKFLOW_PATH: .github/workflows/release-v0.14.4.yml
+    steps:
+      - name: Check out verified source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run release builder tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Run skill tests
+        env:
+          PYTHONPATH: world-memory-autopilot/scripts
+        run: python -m unittest discover -s world-memory-autopilot/tests -v
+
+      - name: Build and verify reproducible archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/build_world_memory_release.py --output "$ASSET" > receipt.json
+          cp "$ASSET" first-build.zip
+          python scripts/build_world_memory_release.py --output "$ASSET" > receipt-second.json
+          cmp first-build.zip "$ASSET"
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          asset = Path(os.environ["ASSET"])
+          first = json.loads(Path("receipt.json").read_text())
+          second = json.loads(Path("receipt-second.json").read_text())
+          digest = hashlib.sha256(asset.read_bytes()).hexdigest()
+          size = asset.stat().st_size
+          assert first == second
+          assert first["version"] == "0.14.4"
+          assert first["entries"] and len(first["entries"]) == 24
+          assert first["sha256"] == digest
+          assert first["size"] == size == int(os.environ["EXPECTED_SIZE"])
+          Path("SHA256SUMS.txt").write_text(f"{digest}  {asset.name}\n")
+          PY
+
+      - name: Require unused release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists" >&2
+            exit 1
+          fi
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIGEST="$(cut -d' ' -f1 SHA256SUMS.txt)"
+          cat > release-notes.md <<EOF
+          Page large RSS collection results without repeating network collection.
+
+          - Collect the eight configured RSS.app feeds exactly once per report window.
+          - Store continuation pages in a short-lived invocation-local snapshot.
+          - Read byte-bounded pages with `read-feed-page` and preserve item order.
+          - Require the accumulated item count to match `itemCount` before any Notion write.
+          - Expire temporary snapshots after 24 hours; never persist them to Notion or model evidence.
+          - Add regression coverage for 259 long-summary items and the 345-minute integration threshold.
+
+          Source commit: `$SOURCE_SHA`
+          ZIP size: `$EXPECTED_SIZE bytes`
+          SHA-256: `$DIGEST`
+          EOF
+          gh release create "$TAG" "$ASSET" SHA256SUMS.txt             --repo "$GITHUB_REPOSITORY"             --target "$SOURCE_SHA"             --title "World Memory Autopilot v0.14.4"             --notes-file release-notes.md
+
+      - name: Remove one-time workflow
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE_SHA="$(gh api "repos/$GITHUB_REPOSITORY/contents/$WORKFLOW_PATH?ref=main" --jq .sha)"
+          gh api --method DELETE "repos/$GITHUB_REPOSITORY/contents/$WORKFLOW_PATH"             -f message="chore: remove one-time v0.14.4 release workflow"             -f sha="$FILE_SHA"             -f branch=main
