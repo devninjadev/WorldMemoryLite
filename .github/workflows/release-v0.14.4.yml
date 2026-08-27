@@ -1,10 +1,15 @@
 name: Release World Memory Autopilot v0.14.4
 
 on:
-  create:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
 
 permissions:
   contents: write
+  pull-requests: write
 
 concurrency:
   group: release-world-memory-v0.14.4
@@ -12,7 +17,7 @@ concurrency:
 
 jobs:
   release:
-    if: github.repository == 'devninjadev/WorldMemoryLite' && github.event.ref_type == 'branch' && github.event.ref == 'release-v0.14.4-trigger'
+    if: github.repository == 'devninjadev/WorldMemoryLite' && github.head_ref == 'release-v0.14.4-trigger'
     runs-on: ubuntu-latest
     env:
       SOURCE_SHA: 5a10abc52745158e4cd666c0d63a755de582e218
@@ -108,4 +113,4 @@ jobs:
           set -euo pipefail
           FILE_SHA="$(gh api "repos/$GITHUB_REPOSITORY/contents/$WORKFLOW_PATH?ref=main" --jq .sha)"
           gh api --method DELETE "repos/$GITHUB_REPOSITORY/contents/$WORKFLOW_PATH"             -f message="chore: remove one-time v0.14.4 release workflow"             -f sha="$FILE_SHA"             -f branch=main
-          gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/release-v0.14.4-trigger"
+          gh pr close "${{ github.event.pull_request.number }}" --repo "$GITHUB_REPOSITORY" --delete-branch
