@@ -30,6 +30,11 @@ from .feed import (
     direct_http_fetch,
     normalize_feed_summary,
 )
+from .feed_pages import (
+    DEFAULT_SNAPSHOT_DIRECTORY,
+    create_feed_snapshot,
+    read_feed_page,
+)
 from .llm_plan import validate_llm_plan
 from .market import MarketSnapshot
 from .notion_layout import DATABASE_SCHEMAS, bootstrap_manifest
@@ -64,6 +69,7 @@ _COMMANDS = (
     "validate-llm-plan",
     "render-scheduled-prompt",
     "collect-feeds",
+    "read-feed-page",
     "normalize-feed",
     "market-data-plan",
     "validate-market-observation",
@@ -87,6 +93,7 @@ _CSV_HEADERS = (
 )
 _TRACKING_PARAMETERS = frozenset({"fbclid", "gclid"})
 _UTC = timezone.utc
+FEED_SNAPSHOT_DIRECTORY = DEFAULT_SNAPSHOT_DIRECTORY
 _TOOL_ACCESS_KEYS_IN_ORDER = (
     "fetchSelf",
     "queryDataSources",
@@ -132,6 +139,7 @@ def _parser() -> argparse.ArgumentParser:
         "validate-llm-plan": "validate one supplied temporary plan",
         "render-scheduled-prompt": "render the self-contained schedule prompt",
         "collect-feeds": "directly collect the fixed RSS.app feeds for one window",
+        "read-feed-page": "read one continuation page from a collected feed snapshot",
         "normalize-feed": "normalize one supplied RSS.app CSV payload",
         "market-data-plan": "describe independent market observations",
         "validate-market-observation": "validate one supplied market observation",
@@ -229,6 +237,7 @@ def _dispatch(command: str, value: dict[str, object]) -> dict[str, object]:
         "validate-llm-plan": _validate_llm_plan,
         "render-scheduled-prompt": _render_scheduled_prompt,
         "collect-feeds": _collect_feeds,
+        "read-feed-page": _read_feed_page,
         "normalize-feed": _normalize_feed,
         "market-data-plan": _market_data_plan,
         "validate-market-observation": assess_market_observation,
@@ -369,12 +378,26 @@ def _collect_feeds(value: dict[str, object]) -> dict[str, object]:
     timeout = value["timeoutSeconds"]
     if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
         raise ValueError("timeoutSeconds must be a positive number")
-    return collect_feed_window(
+    collected = collect_feed_window(
         direct_http_fetch,
         window_start=_timestamp(value["windowStart"], "windowStart"),
         window_end=_timestamp(value["windowEnd"], "windowEnd"),
         fetched_at=datetime.now(_UTC),
         timeout=float(timeout),
+    )
+    return create_feed_snapshot(collected, directory=FEED_SNAPSHOT_DIRECTORY)
+
+
+def _read_feed_page(value: dict[str, object]) -> dict[str, object]:
+    _require_exact_keys(
+        value,
+        frozenset({"snapshotId", "cursor"}),
+        "read-feed-page input",
+    )
+    return read_feed_page(
+        value["snapshotId"],
+        value["cursor"],
+        directory=FEED_SNAPSHOT_DIRECTORY,
     )
 
 

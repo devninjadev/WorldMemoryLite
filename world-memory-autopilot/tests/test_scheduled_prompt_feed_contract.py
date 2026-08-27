@@ -42,6 +42,10 @@ class ScheduledPromptFeedContractTests(unittest.TestCase):
 
         self.assertIn("Run collect-feeds exactly once", prompt)
         self.assertIn('"timeoutSeconds":20', prompt)
+        self.assertIn("Follow nextCursor with read-feed-page", prompt)
+        self.assertIn("Append every page's items in order", prompt)
+        self.assertIn("must equal itemCount", prompt)
+        self.assertIn("Do not call collect-feeds again", prompt)
         self.assertIn("Use its returned filtered items unchanged", prompt)
         self.assertIn(
             "Never use generic web fetch, web search, browser, or connector tools as RSS feed transport",

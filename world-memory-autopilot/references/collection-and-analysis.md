@@ -8,6 +8,7 @@
 | resolve-report-view | now,cadenceMinutes,force,rows,hasMore | view-backed UTC window, reuse disposition, and report type |
 | normalize-story-view | rows,hasMore | validated complete current Story projections |
 | collect-feeds | windowStart,windowEnd,timeoutSeconds | fixed-source direct HTTP collection, normalized half-open window filtering, deduplication, and per-source diagnostics |
+| read-feed-page | snapshotId,cursor | one ordered continuation page from the invocation-local feed snapshot; no network I/O |
 | normalize-feed | feedId,csv | normalized configured-feed outcome |
 | validate-llm-plan | candidate,knownStoryIds,evidenceItemIds,expectedReportType | validated temporary plan |
 
@@ -22,6 +23,7 @@
 | normalize-story-view | exact keys rows,hasMore; hasMore:boolean |
 | Stories view rows[] | required keys url,Name,Status,Category,Regions,Importance,Confidence,Current View,date:First Seen:start,date:Last Evidence At:start,date:Last Updated:start,Created At; Regions is a JSON-array string; optional Related Stories is a JSON-array string; date is_datetime markers may be present |
 | collect-feeds | windowStart/windowEnd:aware ISO timestamps with start before end; timeoutSeconds:positive number; the command captures fetchedAt and requires windowEnd not to be in its future |
+| read-feed-page | snapshotId:exact opaque ID returned by collect-feeds; cursor:positive integer exactly equal to its latest non-null nextCursor |
 | normalize-feed | feedId:one configured ID; csv:string with the exact RSS.app header listed below |
 | validate-llm-plan candidate | exact keys report,storyDecisions,evidenceClusters |
 | candidate.report | exact keys type,stance,confidence,dataQuality,dataGaps,markdown; dataGaps:list of strings; markdown:string with the ordered Report headings |
@@ -76,7 +78,9 @@ Call `collect-feeds` exactly once for the resolved Report window. It performs re
 | dow_jones | Dow Jones Personal | https://rss.app/feeds/_m6HwVpkVbkV6H1V6.csv | 0 |
 | bloomberg | Bloomberg Personal | https://rss.app/feeds/_t07deORnyZW90CjC.csv | 0 |
 
-The top-level result reports `status` (`complete`, `partial`, or `failed`), UTC `windowStart`, `windowEnd`, and `fetchedAt`, `retrievalMethod=direct-http`, `feedSuccessCount`, `feedFailureCount`, `itemCount`, ordered `sourceOutcomes`, and deduplicated `items`. Each source outcome reports `status`, `parsedItemCount`, `rejectedItemCount`, `windowItemCount`, `retainedItemCount`, `latestPublishedAt`, a safe error category, and retryability. A malformed row is quarantined while valid rows from that feed remain usable; a feed whose nonempty payload contains no valid rows remains a parse failure. This distinguishes a valid empty window from stale data, rejected malformed rows, and transport or parse failure. Apply each source offset before the standard half-open `[windowStart, windowEnd)` test. Deduplicate canonical article URLs only within the current invocation, keep the first configured occurrence, and never scan old Collections to prove global uniqueness.
+The top-level result reports `status` (`complete`, `partial`, or `failed`), UTC `windowStart`, `windowEnd`, and `fetchedAt`, `retrievalMethod=direct-http`, `feedSuccessCount`, `feedFailureCount`, total `itemCount`, ordered `sourceOutcomes`, `snapshotId`, `cursor`, `returnedItemCount`, the first deduplicated `items` page, and `nextCursor`. When `nextCursor` is non-null, call `read-feed-page` with exact top-level keys `snapshotId,cursor`, using the returned snapshot ID and cursor without alteration. Append every page's `items` in order and continue with only that page's returned `nextCursor` until null. Never call `collect-feeds` again for the same window. Require the accumulated count to equal the first result's `itemCount`; mismatch, missing snapshot, expired snapshot, or invalid cursor safe-stops before every write. The local snapshot expires after 24 hours and is never persisted to Notion or supplied as evidence; only its unchanged items are evidence.
+
+Each source outcome reports `status`, `parsedItemCount`, `rejectedItemCount`, `windowItemCount`, `retainedItemCount`, `latestPublishedAt`, a safe error category, and retryability. A malformed row is quarantined while valid rows from that feed remain usable; a feed whose nonempty payload contains no valid rows remains a parse failure. This distinguishes a valid empty window from stale data, rejected malformed rows, and transport or parse failure. Apply each source offset before the standard half-open `[windowStart, windowEnd)` test. Deduplicate canonical article URLs only within the current invocation, keep the first configured occurrence, and never scan old Collections to prove global uniqueness.
 
 Use `collect-feeds` output items unchanged as RSS evidence. Never use generic web fetch, web search, browser, or connector tools as RSS transport, substitute collection, or a failed-feed fallback. After `collect-feeds`, general web research is allowed when additional information is needed to verify or enrich a material selected headline. Store that as separate evidence with its own source; it never changes RSS success/failure state, counts, diagnostics, or provenance.
 

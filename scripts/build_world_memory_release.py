@@ -13,7 +13,7 @@ from typing import Iterable
 import zipfile
 
 
-VERSION = "0.14.3"
+VERSION = "0.14.4"
 PACKAGE_NAME = "world-memory-autopilot"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PACKAGE = PROJECT_ROOT / PACKAGE_NAME
@@ -34,6 +34,7 @@ _REQUIRED_RELATIVE_FILES = frozenset(
         "scripts/world_memory/cli.py",
         "scripts/world_memory/discovery.py",
         "scripts/world_memory/feed.py",
+        "scripts/world_memory/feed_pages.py",
         "scripts/world_memory/llm_plan.py",
         "scripts/world_memory/market.py",
         "scripts/world_memory/notion_layout.py",

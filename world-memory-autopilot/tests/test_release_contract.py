@@ -130,7 +130,7 @@ class DocumentationReleaseBoundaryTests(unittest.TestCase):
     def test_readme_names_the_exact_install_artifact_and_operating_model(self) -> None:
         readme = _read(README)
         required = (
-            "world-memory-autopilot-v0.14.3.zip",
+            "world-memory-autopilot-v0.14.4.zip",
             "World Memory · Notion Native",
             "World Memory Collections",
             "World Memory Stories",
@@ -190,7 +190,7 @@ class DocumentationReleaseBoundaryTests(unittest.TestCase):
     def test_release_resolver_calculates_the_actual_installable_file_set(self) -> None:
         paths = _installable_paths()
         relative = {path.relative_to(PACKAGE).as_posix() for path in paths}
-        self.assertEqual(len(paths), 23)
+        self.assertEqual(len(paths), 24)
 
         for required in (
             "SKILL.md",
@@ -201,6 +201,7 @@ class DocumentationReleaseBoundaryTests(unittest.TestCase):
             "scripts/world_memory/__init__.py",
             "scripts/world_memory/cli.py",
             "scripts/world_memory/discovery.py",
+            "scripts/world_memory/feed_pages.py",
             "scripts/world_memory/plugin_market.py",
         ):
             self.assertIn(required, relative)

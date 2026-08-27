@@ -254,7 +254,7 @@ class SkillEntrypointTests(unittest.TestCase):
         )
         self.assertTrue(frontmatter["description"].startswith("Use when "))
         self.assertLess(len(raw), 1024)
-        self.assertEqual(skill.count("Version: `0.14.3`"), 1)
+        self.assertEqual(skill.count("Version: `0.14.4`"), 1)
 
     def test_entrypoint_routes_each_detailed_concern_once(self) -> None:
         skill = _read(SKILL_PATH)
@@ -361,6 +361,7 @@ class LayoutAndSourceDocumentationTests(unittest.TestCase):
                 "normalize-story-view": "exact keys rows,hasMore; hasMore:boolean",
                 "Stories view rows[]": "required keys url,Name,Status,Category,Regions,Importance,Confidence,Current View,date:First Seen:start,date:Last Evidence At:start,date:Last Updated:start,Created At; Regions is a JSON-array string; optional Related Stories is a JSON-array string; date is_datetime markers may be present",
                 "collect-feeds": "windowStart/windowEnd:aware ISO timestamps with start before end; timeoutSeconds:positive number; the command captures fetchedAt and requires windowEnd not to be in its future",
+                "read-feed-page": "snapshotId:exact opaque ID returned by collect-feeds; cursor:positive integer exactly equal to its latest non-null nextCursor",
                 "normalize-feed": "feedId:one configured ID; csv:string with the exact RSS.app header listed below",
                 "validate-llm-plan candidate": "exact keys report,storyDecisions,evidenceClusters",
                 "candidate.report": "exact keys type,stance,confidence,dataQuality,dataGaps,markdown; dataGaps:list of strings; markdown:string with the ordered Report headings",
@@ -909,6 +910,11 @@ class LayoutAndSourceDocumentationTests(unittest.TestCase):
                     "windowStart,windowEnd,timeoutSeconds",
                     "fixed-source direct HTTP collection, normalized half-open window filtering, deduplication, and per-source diagnostics",
                 ),
+                "read-feed-page": (
+                    "collection-and-analysis",
+                    "snapshotId,cursor",
+                    "one ordered continuation page from the invocation-local feed snapshot; no network I/O",
+                ),
                 "normalize-feed": (
                     "collection-and-analysis",
                     "feedId,csv",
@@ -1005,7 +1011,10 @@ class LayoutAndSourceDocumentationTests(unittest.TestCase):
             },
         }
         documented = _documented_cli_rows()
-        self.assertEqual(set(documented) - {"collect-feeds"}, set(fixtures))
+        self.assertEqual(
+            set(documented) - {"collect-feeds", "read-feed-page"},
+            set(fixtures),
+        )
         for command, request in fixtures.items():
             with self.subTest(command=command):
                 completed = run_cli(command, "-", stdin=json.dumps(request))

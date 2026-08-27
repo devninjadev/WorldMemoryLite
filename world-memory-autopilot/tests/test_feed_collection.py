@@ -51,10 +51,7 @@ def _csv(*rows: dict[str, str]) -> bytes:
 class FeedWindowCollectionTests(unittest.TestCase):
     def test_configures_eight_article_and_relay_feeds_in_order(self) -> None:
         self.assertEqual(
-            tuple(
-                (feed.id, feed.name, feed.url, feed.published_at_offset_minutes)
-                for feed in feed_module.FEEDS
-            ),
+            tuple((feed.id, feed.name, feed.url, feed.published_at_offset_minutes) for feed in feed_module.FEEDS),
             _EXPECTED_FEEDS,
         )
 
@@ -82,7 +79,7 @@ class FeedWindowCollectionTests(unittest.TestCase):
         self.assertEqual(request.get_method(), "GET")
         self.assertEqual(request.get_header("Cache-control"), "no-cache")
         self.assertEqual(request.get_header("Pragma"), "no-cache")
-        self.assertIn("WorldMemoryAutopilot/0.14.3", request.get_header("User-agent"))
+        self.assertIn("WorldMemoryAutopilot/0.14.4", request.get_header("User-agent"))
         self.assertEqual(open_url.call_args.kwargs["timeout"], 13.0)
         with self.assertRaisesRegex(ValueError, "configured feed"):
             feed_module.direct_http_fetch("https://example.com/not-configured.csv", 13)

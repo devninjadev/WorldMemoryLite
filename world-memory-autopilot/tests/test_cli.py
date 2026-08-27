@@ -411,6 +411,7 @@ class CliMappingTests(unittest.TestCase):
             "validate-llm-plan",
             "render-scheduled-prompt",
             "collect-feeds",
+            "read-feed-page",
             "normalize-feed",
             "market-data-plan",
             "validate-market-observation",
