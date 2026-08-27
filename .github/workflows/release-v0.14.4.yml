@@ -112,3 +112,5 @@ jobs:
           set -euo pipefail
           FILE_SHA="$(gh api "repos/$GITHUB_REPOSITORY/contents/$WORKFLOW_PATH?ref=main" --jq .sha)"
           gh api --method DELETE "repos/$GITHUB_REPOSITORY/contents/$WORKFLOW_PATH"             -f message="chore: remove one-time v0.14.4 release workflow"             -f sha="$FILE_SHA"             -f branch=main
+
+# Existing-workflow trigger for the approved one-time release.
