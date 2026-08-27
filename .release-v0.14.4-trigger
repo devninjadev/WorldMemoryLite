@@ -1,1 +1,2 @@
 Approved one-time release trigger for source 5a10abc52745158e4cd666c0d63a755de582e218.
+Retry 1: include the skill package root in CI test imports.
