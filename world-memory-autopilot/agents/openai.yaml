@@ -1,5 +1,5 @@
 interface:
-  display_name: "World Memory · Notion Native"
+  display_name: "World Memory · Notion Native (월드메모리)"
   short_description: "Readable market narratives in Notion"
   icon_small: "./assets/icon.svg"
   icon_large: "./assets/icon.svg"
