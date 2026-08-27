@@ -6,6 +6,7 @@ on:
       - main
     types:
       - opened
+      - synchronize
 
 permissions:
   contents: write
@@ -42,7 +43,7 @@ jobs:
 
       - name: Run skill tests
         env:
-          PYTHONPATH: world-memory-autopilot/scripts
+          PYTHONPATH: world-memory-autopilot:world-memory-autopilot/scripts
         run: python -m unittest discover -s world-memory-autopilot/tests -v
 
       - name: Build and verify reproducible archive
