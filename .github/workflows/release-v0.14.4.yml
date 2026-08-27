@@ -1,11 +1,7 @@
 name: Release World Memory Autopilot v0.14.4
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - .github/workflows/release-v0.14.4.yml
+  create:
 
 permissions:
   contents: write
@@ -16,7 +12,7 @@ concurrency:
 
 jobs:
   release:
-    if: github.repository == 'devninjadev/WorldMemoryLite'
+    if: github.repository == 'devninjadev/WorldMemoryLite' && github.event.ref_type == 'branch' && github.event.ref == 'release-v0.14.4-trigger'
     runs-on: ubuntu-latest
     env:
       SOURCE_SHA: 5a10abc52745158e4cd666c0d63a755de582e218
@@ -103,7 +99,7 @@ jobs:
           EOF
           gh release create "$TAG" "$ASSET" SHA256SUMS.txt             --repo "$GITHUB_REPOSITORY"             --target "$SOURCE_SHA"             --title "World Memory Autopilot v0.14.4"             --notes-file release-notes.md
 
-      - name: Remove one-time workflow
+      - name: Remove one-time release machinery
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
@@ -112,5 +108,4 @@ jobs:
           set -euo pipefail
           FILE_SHA="$(gh api "repos/$GITHUB_REPOSITORY/contents/$WORKFLOW_PATH?ref=main" --jq .sha)"
           gh api --method DELETE "repos/$GITHUB_REPOSITORY/contents/$WORKFLOW_PATH"             -f message="chore: remove one-time v0.14.4 release workflow"             -f sha="$FILE_SHA"             -f branch=main
-
-# Existing-workflow trigger for the approved one-time release.
+          gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/release-v0.14.4-trigger"
