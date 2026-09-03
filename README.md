@@ -1,12 +1,12 @@
-# World Memory Autopilot 0.14.5
+# World Memory Autopilot 0.14.6
 
-`world-memory-autopilot-v0.14.5.zip` installs a SQL-free, Notion-native World Memory skill for ChatGPT Workspace Agents and the official Notion MCP.
+`world-memory-autopilot-v0.14.6.zip` installs a SQL-free, Notion-native World Memory skill for ChatGPT Workspace Agents and the official Notion MCP.
 
 Alpaca and Wolfram are optional connectors. When either is unavailable, the existing official and public fallbacks remain available according to the capability plan; the core Notion persistence boundary remains the official Notion MCP.
 
 ## Install
 
-1. Install `world-memory-autopilot-v0.14.5.zip` as the workspace skill.
+1. Install `world-memory-autopilot-v0.14.6.zip` as the workspace skill.
 2. Connect the official Notion MCP. Allow setup and schema-create permissions only during bootstrap, then reduce access to normal read/write after the live canary; destructive permissions remain disabled.
 3. Run the explicit fresh bootstrap. It creates a new `World Memory · Notion Native` Hub and four database containers, each with an initial data source: `World Memory Collections`, `World Memory Stories`, `World Memory Story Changes`, and `World Memory Reports`.
 4. Configure the saved Notion views `Reports Recent` and `Stories Current`, then complete the finite schema-and-view read-back. Run the read-only public CSV canary and require the ordered VIX symbols `VIX9D`, `VIX`, `VIX3M`, and `VIX6M`; the setup must never mutate that spreadsheet.
@@ -27,6 +27,8 @@ A partial source failure does not erase successful news or market observations. 
 
 Version 0.14.5 keeps the eight fixed RSS.app CSV sources and changes large collection delivery to one immutable, invocation-local snapshot with byte-bounded continuation pages. `collect-feeds` still performs one bounded direct GET per source, applies source timestamp offsets and the half-open report window in code, deduplicates retained URLs, and reports parsed, rejected, in-window, retained, latest-published, and error diagnostics per source. It returns the first page plus a snapshot ID and cursor; `read-feed-page` reads only that snapshot without network I/O until all items are recovered in order. The run verifies the accumulated item count against the initial total before any write, and the temporary snapshot expires after 24 hours without entering Notion or model evidence. Malformed rows remain quarantined without discarding valid rows from the same feed; a nonempty payload with no valid rows still fails safely. Generic web fetch and web search cannot substitute for RSS transport, but remain available after collection for material-headline verification and enrichment.
 
+Version 0.14.6 also pages the Notion storage boundary itself. `collection_pages` emits ordered, single-page create requests with at most 50 retained articles per Collection page. The Workspace Agent submits and confirms them one at a time, stops the remaining Collection writes after a failure, and relates the Report to every confirmed page. This avoids the prior 425-item Markdown-processing limit without recollecting feeds or dropping evidence.
+
 The external reservation remains exactly six hours (`creationCadenceMinutes=360`), while Story integration becomes due after 345 elapsed minutes. This keeps the user-visible six-hour schedule unchanged and prevents normal scheduler delivery variance from demoting a nominal six-hour run to a briefing.
 
 Each Report uses one generated thesis H1 followed by `Key Takeaway`, `시장 현황`, `중장기 맥락`, `주요 지표들`, `지켜봐야 할 것들`, `관심을 가져볼 만한 이슈들`, and `출처·데이터 안내`. Semantic evidence clusters cover every supplied item exactly once; high-importance evidence can be visible in the Report without forcing a Story write. Confirmed new or reused Reports return their Notion link without duplicating the body, while failed, uncertain, or URL-less delivery returns the generated Markdown fallback.
@@ -39,7 +41,7 @@ v0.11.x migrations must pause the existing schedule, explicitly regenerate the `
 
 ## Existing installations and rollback
 
-Old `0.10.x` artifacts are rollback-only archives. Their Hubs and records are not auto-migrated, adopted, merged, or deleted by 0.14.5. Install the new release into a clean Hub, pause the old schedule, verify the new schedule, and keep the old Hub as an independent reference. Rollback means stopping the new schedule and deciding separately whether to reactivate an older one; it does not require deletion.
+Old `0.10.x` artifacts are rollback-only archives. Their Hubs and records are not auto-migrated, adopted, merged, or deleted by 0.14.6. Install the new release into a clean Hub, pause the old schedule, verify the new schedule, and keep the old Hub as an independent reference. Rollback means stopping the new schedule and deciding separately whether to reactivate an older one; it does not require deletion.
 
 Live acceptance requires a new test Hub and actual Workspace Agent receipts. Local verification does not prove live Alpaca, Wolfram, Workspace, or Notion acceptance and does not claim that a live canary has run.
 

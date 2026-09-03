@@ -130,7 +130,7 @@ class DocumentationReleaseBoundaryTests(unittest.TestCase):
     def test_readme_names_the_exact_install_artifact_and_operating_model(self) -> None:
         readme = _read(README)
         required = (
-            "world-memory-autopilot-v0.14.4.zip",
+            "world-memory-autopilot-v0.14.6.zip",
             "World Memory · Notion Native",
             "World Memory Collections",
             "World Memory Stories",

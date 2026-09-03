@@ -254,7 +254,7 @@ class SkillEntrypointTests(unittest.TestCase):
         )
         self.assertTrue(frontmatter["description"].startswith("Use when "))
         self.assertLess(len(raw), 1024)
-        self.assertEqual(skill.count("Version: `0.14.4`"), 1)
+        self.assertEqual(skill.count("Version: `0.14.6`"), 1)
 
     def test_entrypoint_routes_each_detailed_concern_once(self) -> None:
         skill = _read(SKILL_PATH)
@@ -1200,7 +1200,7 @@ class LayoutAndSourceDocumentationTests(unittest.TestCase):
     def test_story_payload_routing_uses_real_public_helpers_not_fictional_commands(self) -> None:
         text = _read(REFERENCE_PATHS["collection-and-analysis"])
         for helper in (
-            "collection_page",
+            "collection_pages",
             "report_page",
             "story_page",
             "story_update",

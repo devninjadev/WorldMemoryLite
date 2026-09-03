@@ -37,7 +37,7 @@ _CSV_HEADERS = (
 )
 _TRACKING_PARAMETERS = {"fbclid", "gclid"}
 _UTC = timezone.utc
-_USER_AGENT = "WorldMemoryAutopilot/0.14.4 (feed contract verifier)"
+_USER_AGENT = "WorldMemoryAutopilot/0.14.6 (feed contract verifier)"
 _BLOCKED_SUMMARY_TAGS = frozenset({"script", "style", "iframe", "object"})
 _VOID_BLOCKED_SUMMARY_TAGS = frozenset({"embed"})
 _BLOCKED_MARKUP_IN_RAW_TEXT = re.compile(

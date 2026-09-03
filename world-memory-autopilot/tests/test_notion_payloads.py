@@ -9,6 +9,7 @@ import unittest
 from world_memory.feed import FeedItem, FeedOutcome, normalize_feed_summary
 from world_memory.market import MarketSnapshot, ProviderResult
 from world_memory.notion_payloads import (
+    collection_pages,
     collection_page,
     report_page,
     story_change_page,
@@ -160,6 +161,40 @@ DECISION = {
 
 
 class CollectionPayloadTests(unittest.TestCase):
+    def test_large_collection_is_split_into_sequential_page_requests(self) -> None:
+        items = tuple(
+            FeedItem(
+                item_id=f"item-{index}",
+                source_id="reuters",
+                source_name="Reuters Business",
+                title=f"Headline {index}",
+                url=f"https://example.com/article-{index}",
+                published_at="2026-08-14T01:15:00Z",
+                summary=f"Summary {index}",
+            )
+            for index in range(101)
+        )
+        outcomes = (FeedOutcome("reuters", "Reuters Business", "ok", items, "", False),)
+
+        requests = collection_pages(REGISTRY, WINDOW, outcomes, MARKET)
+
+        self.assertEqual(len(requests), 3)
+        self.assertEqual(
+            [request["pages"][0]["properties"]["Item Count"] for request in requests],
+            [50, 50, 1],
+        )
+        self.assertEqual(
+            [request["pages"][0]["properties"]["Name"] for request in requests],
+            [
+                "Collection · 2026-08-14 09:00–12:00 KST · 1/3",
+                "Collection · 2026-08-14 09:00–12:00 KST · 2/3",
+                "Collection · 2026-08-14 09:00–12:00 KST · 3/3",
+            ],
+        )
+        combined = "\n".join(request["pages"][0]["content"] for request in requests)
+        for index in range(101):
+            self.assertEqual(combined.count(f"### Headline {index}\n"), 1)
+
     def test_collection_is_plain_markdown_grouped_by_source(self) -> None:
         payload = collection_page(REGISTRY, WINDOW, OUTCOMES, MARKET)
         page = payload["pages"][0]

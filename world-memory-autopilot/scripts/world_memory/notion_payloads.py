@@ -31,6 +31,7 @@ _MARKDOWN_INLINE_CONTROLS = frozenset("\\*~`$[]<>{}|^")
 _MARKDOWN_LINK_DESTINATION_HAZARDS = frozenset('\\`<>{}|^()"')
 _HEX_DIGITS = frozenset("0123456789abcdefABCDEF")
 _ARTICLE_LINK_LABEL = "기사 원문"
+_COLLECTION_ITEMS_PER_PAGE = 50
 _STORY_STATUS_OPTIONS = tuple(
     DATABASE_SCHEMAS["stories"]["properties"]["Status"]["options"]
 )
@@ -76,6 +77,47 @@ def collection_page(
         properties,
         _collection_markdown(window, feed_outcomes, retained_items, market),
     )
+
+
+def collection_pages(
+    registry: Registry,
+    window: Window,
+    outcomes: Iterable[FeedOutcome],
+    market: MarketSnapshot,
+) -> tuple[dict[str, object], ...]:
+    """Return sequential, bounded Collection create requests for one window."""
+
+    registry = _require_registry(registry)
+    window = _require_window(window)
+    feed_outcomes = _feed_outcomes(outcomes)
+    market = _require_market(market)
+    retained_items = deduplicate_items(feed_outcomes)
+    chunks = tuple(
+        retained_items[index : index + _COLLECTION_ITEMS_PER_PAGE]
+        for index in range(0, len(retained_items), _COLLECTION_ITEMS_PER_PAGE)
+    ) or ((),)
+    page_count = len(chunks)
+    requests: list[dict[str, object]] = []
+    for page_index, chunk in enumerate(chunks, 1):
+        chunk_ids = {item.item_id for item in chunk}
+        page_outcomes = tuple(
+            FeedOutcome(
+                outcome.source_id,
+                outcome.source_name,
+                outcome.status,
+                tuple(item for item in outcome.items if item.item_id in chunk_ids),
+                outcome.error,
+                outcome.retryable,
+            )
+            for outcome in feed_outcomes
+        )
+        request = collection_page(registry, window, page_outcomes, market)
+        page = request["pages"][0]
+        page["properties"]["Item Count"] = len(chunk)
+        if page_count > 1:
+            page["properties"]["Name"] += f" · {page_index}/{page_count}"
+        requests.append(request)
+    return tuple(requests)
 
 
 def report_page(
