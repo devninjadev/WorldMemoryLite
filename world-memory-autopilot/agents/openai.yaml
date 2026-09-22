@@ -1,6 +1,15 @@
 interface:
-  display_name: "월드메모리"
-  short_description: "Readable market narratives in Notion"
-  icon_small: "./assets/icon.svg"
-  icon_large: "./assets/icon.svg"
-  default_prompt: "Use $world-memory-autopilot with notion-native-v2 saved Notion views for SQL-free same-window Report reuse, partial-source continuation, a six-hour reservation, and 345-minute Story integration."
+  display_name: 월드메모리
+  short_description: Readable market narratives in Notion
+  icon_small: assets/icon.svg
+  icon_large: assets/icon.svg
+  default_prompt: Use $world-memory-autopilot with notion-native-v2 saved Notion views
+    for SQL-free same-window Report reuse, partial-source continuation, and six-hour
+    Story integration.
+policy:
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
+  allow_implicit_invocation: true
