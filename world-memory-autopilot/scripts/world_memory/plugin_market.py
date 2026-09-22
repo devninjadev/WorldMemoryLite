@@ -56,7 +56,7 @@ _CAPABILITY_FALLBACKS = {
     "btc-usd": (),
     "treasury-yield-curve": ("treasury-csv", "treasury-xml"),
     "economic-time-series": ("fred-batch", "fred-page"),
-    "volatility-term-structure": ("spreadsheet", "cboe"),
+    "volatility-term-structure": ("cboe", "spreadsheet"),
 }
 
 _ALPACA_MARKET_CAPABILITIES = frozenset(
@@ -114,6 +114,7 @@ _PROVIDERS = frozenset(
         "fred-batch",
         "fred-page",
         "spreadsheet",
+        "google-finance",
         "cboe",
     }
 )
@@ -133,6 +134,7 @@ _PROVIDER_URL_HOSTS = {
     "treasury-xml": frozenset({"home.treasury.gov"}),
     "fred-batch": frozenset({"api.stlouisfed.org", "fred.stlouisfed.org"}),
     "fred-page": frozenset({"fred.stlouisfed.org"}),
+    "google-finance": frozenset({"www.google.com"}),
     "spreadsheet": frozenset({"docs.google.com"}),
     "cboe": frozenset({"cdn.cboe.com", "www.cboe.com"}),
 }
@@ -363,6 +365,10 @@ _PUBLIC_HTTP_INVOCATIONS = {
     "fred-page": (
         "get_fred_series_page",
         "https://fred.stlouisfed.org/series/{seriesIdWithoutPrefix}",
+    ),
+    "google-finance": (
+        "open_quote_and_parse_quote_for_each_symbol",
+        "https://www.google.com/finance/quote/{plan.vixSymbols[]}:INDEXCBOE",
     ),
     "spreadsheet": ("get_registered_vix_csv", "plan.vixPublicCsvUrl"),
     "cboe": (
@@ -1710,6 +1716,8 @@ def _capability_row(
     capability: str, access: dict[str, bool], vix_public_csv_url: str
 ) -> dict[str, object]:
     providers: list[str] = []
+    if capability == "volatility-term-structure":
+        providers.append("google-finance")
     if access["alpacaMarketData"] and capability in _ALPACA_MARKET_CAPABILITIES:
         providers.append("alpaca")
     if access["alpacaOptions"] and capability in _ALPACA_OPTIONS_CAPABILITIES:
@@ -1780,6 +1788,8 @@ def _provider_attempt(
         source_locator_persistence = "provider-query"
     else:
         action, endpoint_template = _PUBLIC_HTTP_INVOCATIONS[provider]
+        if provider == "google-finance":
+            tool = "web.open + world_memory.google_finance.parse_quote"
         if provider == "spreadsheet":
             endpoint_template = vix_public_csv_url
     return {

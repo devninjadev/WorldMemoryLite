@@ -15,6 +15,9 @@ from html import unescape
 from html.parser import HTMLParser
 from io import StringIO
 import re
+import socket
+import ssl
+from urllib.error import HTTPError, URLError
 from typing import Callable, Iterable
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from urllib.request import Request, urlopen
@@ -37,7 +40,7 @@ _CSV_HEADERS = (
 )
 _TRACKING_PARAMETERS = {"fbclid", "gclid"}
 _UTC = timezone.utc
-_USER_AGENT = "WorldMemoryAutopilot/0.14.6 (feed contract verifier)"
+_USER_AGENT = "WorldMemoryAutopilot/0.14.4 (feed contract verifier)"
 _BLOCKED_SUMMARY_TAGS = frozenset({"script", "style", "iframe", "object"})
 _VOID_BLOCKED_SUMMARY_TAGS = frozenset({"embed"})
 _BLOCKED_MARKUP_IN_RAW_TEXT = re.compile(
@@ -433,12 +436,8 @@ def _collect_one(feed: FeedSpec, fetcher: Fetcher, timeout: float) -> FeedOutcom
     try:
         response = fetcher(feed.url, timeout)
     except Exception as exc:
-        return _error_outcome(
-            feed,
-            exc,
-            category="feed_fetch",
-            retryable=isinstance(exc, (OSError, TimeoutError)),
-        )
+        error, retryable = _fetch_error(exc)
+        return FeedOutcome(feed.id, feed.name, "error", (), error, retryable)
 
     try:
         items, rejected_item_count = _parse_csv(feed, response)
@@ -551,6 +550,43 @@ def _error_outcome(
     feed: FeedSpec, exc: Exception, *, category: str, retryable: bool
 ) -> FeedOutcome:
     return FeedOutcome(feed.id, feed.name, "error", (), _safe_error(category, exc), retryable)
+
+
+def _fetch_error(exc: Exception) -> tuple[str, bool]:
+    """Classify transport failures without exposing exception text or credentials.
+
+    urllib wraps DNS, TLS and socket failures in URLError. Inspect typed reasons
+    rather than interpreting provider-controlled strings. Retryability describes
+    a failure class, not a promise that a blocked network route will recover.
+    """
+    reason = exc
+    for _ in range(4):
+        if isinstance(reason, HTTPError):
+            status = reason.code
+            if type(status) is int and 100 <= status <= 599:
+                return f"feed_fetch_http_{status}", status in {408, 425, 429} or 500 <= status <= 599
+            return "feed_fetch_http_error", False
+        if isinstance(reason, URLError) and isinstance(reason.reason, Exception):
+            reason = reason.reason
+        else:
+            break
+    if isinstance(reason, ssl.SSLCertVerificationError):
+        return "feed_fetch_tls_certificate", False
+    if isinstance(reason, ssl.SSLError):
+        return "feed_fetch_tls_error", False
+    if isinstance(reason, socket.gaierror):
+        if reason.errno == socket.EAI_AGAIN:
+            return "feed_fetch_dns_temporary", True
+        return "feed_fetch_dns_error", False
+    if isinstance(reason, TimeoutError):
+        return "feed_fetch_timeouterror", True
+    if isinstance(reason, PermissionError):
+        return "feed_fetch_access_denied", False
+    if isinstance(reason, ConnectionRefusedError):
+        return "feed_fetch_connection_refused", True
+    if isinstance(reason, ConnectionResetError):
+        return "feed_fetch_connection_reset", True
+    return _safe_error("feed_fetch", reason), isinstance(reason, OSError)
 
 
 def _safe_error(category: str, exc: Exception) -> str:
