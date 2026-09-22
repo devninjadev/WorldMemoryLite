@@ -84,3 +84,17 @@ Use a new test Hub. Verify workspace binding, four schema projections, both save
 ## Rollback
 
 Stop the new schedule, retain the new Hub for diagnosis, and let the user decide whether to reactivate an older schedule. Do not delete either Hub or combine their data automatically.
+
+
+## Repeated feed transport failures (manual repair)
+
+Inspect the current execution environment's network policy before probing. The fixed RSS.app feeds require HTTPS access to `rss.app` from the runtime executing `collect-feeds`; access in a user's browser does not establish runtime access. If the permitted destinations exclude RSS.app, report that missing access as a collection blocker. Do not disable TLS checks, alter proxies, tunnel requests, change feed hosts, or replace the approved transport with web/browser/connector fetching.
+
+For an explicit diagnosis request, inspect the original typed transport exception through a bounded request to a configured feed. Never disclose proxy values, credentials, or raw exception text. Distinguish DNS, TLS certificate, HTTP status, connection reset/refusal, and timeout. Do not attribute a proxy request timeout to direct DNS failure alone. Timeouts do not prove that the provider is down. The collector unwraps typed `URLError.reason` values and emits safe codes; opaque string reasons remain `feed_fetch_urlerror`. HTTP 408/425/429 and 5xx, temporary DNS, timeouts, and connection reset/refusal are potentially retryable; certificate, permission, permanent DNS, and other HTTP failures are not.
+
+Preserve source outcome fields and successful feeds. Do not add hidden retries, alter the resolved window, or persist raw diagnostics. If a network prerequisite is missing, distinguish code improvements from live recovery: save and test the authorized skill fix, identify the outstanding access requirement, and do not claim that collection is restored. A changed failure cause or newly identified shared blocker is a meaningful update even when earlier runs reported failures. Keep scheduled no-repair and zero-success no-write rules intact.
+
+
+## Publisher-search deployment
+
+Render the current scheduled prompt with render-scheduled-prompt and update the existing World Memory automation prompt, preserving its registry, active state, cadence and timezone. Verify the returned prompt uses publisher-web-search-v2 and no RSS success gate. Do not create a replacement automation. This authorized source change does not modify Notion schemas. Legacy RSS diagnostics above apply only to explicit RSS tasks.
