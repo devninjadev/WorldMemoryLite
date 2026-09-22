@@ -10,21 +10,21 @@ from world_memory.registry import Registry
 
 _REGISTRY = {
     "schemaVersion": "notion-native-v2",
-    "workspaceId": "11111111-1111-4111-8111-111111111111",
+    "workspaceId": "3666f452-b2ec-4373-b789-21de47f74fec",
     "hub": {
-        "pageId": "22222222-2222-4222-8222-222222222222",
-        "url": "https://app.notion.com/p/22222222222242228222222222222222",
+        "pageId": "3bc2f5b1-4f3b-8176-9245-c8356b8b3072",
+        "url": "https://app.notion.com/p/3bc2f5b14f3b81769245c8356b8b3072",
     },
-    "collections": {"dataSourceId": "33333333-3333-4333-8333-333333333333"},
-    "stories": {"dataSourceId": "44444444-4444-4444-8444-444444444444"},
-    "storyChanges": {"dataSourceId": "55555555-5555-4555-8555-555555555555"},
-    "reports": {"dataSourceId": "66666666-6666-4666-8666-666666666666"},
+    "collections": {"dataSourceId": "7ade603e-4679-4ec4-a649-9eee37aaf5f3"},
+    "stories": {"dataSourceId": "70d9d79e-0731-4c0a-85c3-8fdddf8b747b"},
+    "storyChanges": {"dataSourceId": "a77292d7-72a6-486f-9c17-049d0e5e66f8"},
+    "reports": {"dataSourceId": "77f9c6e9-3636-4696-b2b1-e71efe2cfdd0"},
     "views": {
         "reportsRecent": {
-            "url": "https://app.notion.com/p/77777777777747778777777777777777?v=88888888888848888888888888888888"
+            "url": "https://app.notion.com/p/02f42d94e35f4472b370f659ee364083?v=3bc2f5b14f3b81c483ec000c8732c5e5"
         },
         "storiesCurrent": {
-            "url": "https://app.notion.com/p/99999999999949998999999999999999?v=aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa"
+            "url": "https://app.notion.com/p/a96636ccb58b43c1aec1b687149cd769?v=3bc2f5b14f3b8102af15000c67d7b019"
         },
     },
     "marketSources": {
@@ -37,31 +37,21 @@ _REGISTRY = {
 
 
 class ScheduledPromptFeedContractTests(unittest.TestCase):
-    def test_binds_direct_collection_and_keeps_web_research_as_enrichment(self) -> None:
+    def test_search_mode_replaces_rss_without_losing_storage_guards(self):
         prompt = render_scheduled_prompt(Registry.from_mapping(_REGISTRY))
+        for domain in ('bloomberg.com', 'ft.com', 'wsj.com', 'barrons.com', 'benzinga.com', 'marketwatch.com'):
+            self.assertIn(domain, prompt)
+        for guard in ('publisher-web-search-v2', 'novelty-baseline-unavailable', 'late-discovered', 'coarse-window', 'omit RSS Feed Success Count', 'Only a confirmed Report'):
+            self.assertIn(guard, prompt)
+        self.assertNotIn('Run collect-feeds exactly once', prompt)
+        self.assertNotIn('If feedSuccessCount is zero', prompt)
+        self.assertNotIn('https://rss.app/feeds/', prompt)
 
-        self.assertIn("Run collect-feeds exactly once", prompt)
-        self.assertIn('"timeoutSeconds":20', prompt)
-        self.assertIn("Follow nextCursor with read-feed-page", prompt)
-        self.assertIn("Append every page's items in order", prompt)
-        self.assertIn("must equal itemCount", prompt)
-        self.assertIn("Do not call collect-feeds again", prompt)
-        self.assertIn("Use its returned filtered items unchanged", prompt)
-        self.assertIn(
-            "Never use generic web fetch, web search, browser, or connector tools as RSS feed transport",
-            prompt,
-        )
-        self.assertIn(
-            "General web research remains allowed after collect-feeds",
-            prompt,
-        )
-        self.assertIn("does not change feed success or failure", prompt)
-        self.assertIn("If feedSuccessCount is zero", prompt)
-        self.assertIn("latestPublishedAt", prompt)
-        self.assertIn("configured eight RSS.app CSV feeds", prompt)
-        self.assertIn("Reuters | https://rss.app/feeds/_fSiPEQ8FZXQdj4js.csv", prompt)
-        self.assertIn("Dow Jones Personal | https://rss.app/feeds/_m6HwVpkVbkV6H1V6.csv", prompt)
-        self.assertIn("Bloomberg Personal | https://rss.app/feeds/_t07deORnyZW90CjC.csv", prompt)
+    def test_search_feed_admits_attributed_claims_without_original_access(self):
+        prompt = render_scheduled_prompt(Registry.from_mapping(_REGISTRY))
+        for boundary in ('Original-article access is optional', 'search-summary-only', 'never newly-published', 'Semantic novelty', 'Lead-only candidates cannot alone justify a Report', 'not independent', 'omit unsupported numbers', 'Do not reject'):
+            self.assertIn(boundary, prompt)
+        self.assertNotIn('Only new/material-update/late-discovered items with sufficient article-level evidence', prompt)
 
     def test_keeps_six_hour_reservation_with_345_minute_integration_due(self) -> None:
         prompt = render_scheduled_prompt(Registry.from_mapping(_REGISTRY))

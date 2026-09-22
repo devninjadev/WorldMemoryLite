@@ -6,6 +6,9 @@ import csv
 from datetime import datetime, timezone
 from io import StringIO
 import unittest
+import socket
+import ssl
+from urllib.error import HTTPError, URLError
 from unittest.mock import patch
 
 from world_memory import feed as feed_module
@@ -49,6 +52,33 @@ def _csv(*rows: dict[str, str]) -> bytes:
 
 
 class FeedWindowCollectionTests(unittest.TestCase):
+    def test_transport_reason_classification_and_redaction(self):
+        secret = "https://user:secret@example.invalid/private"
+        cases = [
+            (URLError(TimeoutError(secret)), "feed_fetch_timeouterror", True),
+            (URLError(socket.gaierror(socket.EAI_AGAIN, secret)), "feed_fetch_dns_temporary", True),
+            (URLError(socket.gaierror(socket.EAI_NONAME, secret)), "feed_fetch_dns_error", False),
+            (URLError(ssl.SSLCertVerificationError(1, secret)), "feed_fetch_tls_certificate", False),
+            (URLError(ssl.SSLError(1, secret)), "feed_fetch_tls_error", False),
+            (URLError(PermissionError(secret)), "feed_fetch_access_denied", False),
+            (URLError(ConnectionRefusedError(secret)), "feed_fetch_connection_refused", True),
+            (URLError(ConnectionResetError(secret)), "feed_fetch_connection_reset", True),
+            (URLError(secret), "feed_fetch_urlerror", True),
+        ]
+        for status in (401, 403, 404, 408, 425, 429, 500, 503):
+            cases.append((HTTPError(secret, status, secret, None, None),
+                          f"feed_fetch_http_{status}", status in (408, 425, 429, 500, 503)))
+        for error, expected, retryable in cases:
+            with self.subTest(expected=expected):
+                def fail(url, timeout):
+                    raise error
+                outcome = feed_module._collect_one(feed_module.FEEDS[0], fail, 20)
+                self.assertEqual(outcome.error, expected)
+                self.assertEqual(outcome.retryable, retryable)
+                self.assertEqual(outcome.status, "error")
+                self.assertEqual(outcome.items, ())
+                self.assertNotIn(secret, outcome.error)
+
     def test_configures_eight_article_and_relay_feeds_in_order(self) -> None:
         self.assertEqual(
             tuple((feed.id, feed.name, feed.url, feed.published_at_offset_minutes) for feed in feed_module.FEEDS),
@@ -79,7 +109,7 @@ class FeedWindowCollectionTests(unittest.TestCase):
         self.assertEqual(request.get_method(), "GET")
         self.assertEqual(request.get_header("Cache-control"), "no-cache")
         self.assertEqual(request.get_header("Pragma"), "no-cache")
-        self.assertIn("WorldMemoryAutopilot/0.14.6", request.get_header("User-agent"))
+        self.assertIn("WorldMemoryAutopilot/0.14.4", request.get_header("User-agent"))
         self.assertEqual(open_url.call_args.kwargs["timeout"], 13.0)
         with self.assertRaisesRegex(ValueError, "configured feed"):
             feed_module.direct_http_fetch("https://example.com/not-configured.csv", 13)
