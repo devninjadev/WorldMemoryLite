@@ -13,7 +13,7 @@ from typing import Iterable
 import zipfile
 
 
-VERSION = "0.17.0"
+VERSION = "0.17.1"
 PACKAGE_NAME = "world-memory-autopilot"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PACKAGE = PROJECT_ROOT / PACKAGE_NAME
@@ -21,6 +21,8 @@ DEFAULT_OUTPUT = PROJECT_ROOT / f"{PACKAGE_NAME}-v{VERSION}.zip"
 _REQUIRED_RELATIVE_FILES = frozenset(
     {
         "SKILL.md",
+        "VERSION",
+        "references/alpaca-connector-fallback.md",
         "requirements.txt",
         "agents/openai.yaml",
         "assets/icon.svg",
@@ -49,7 +51,7 @@ _REQUIRED_RELATIVE_FILES = frozenset(
         "scripts/world_memory/workflow.py",
     }
 )
-_ALLOWED_ROOTS = frozenset({"SKILL.md", "requirements.txt", "agents", "assets", "references", "scripts"})
+_ALLOWED_ROOTS = frozenset({"SKILL.md", "VERSION", "requirements.txt", "agents", "assets", "references", "scripts"})
 _LEGACY_MARKERS = (
     "targeted-v1",
     "wmc1",

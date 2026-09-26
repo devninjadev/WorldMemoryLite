@@ -404,3 +404,7 @@ Classify market availability as:
 When providers disagree beyond a meaningful tolerance, show the discrepancy and lower confidence for the affected interpretation. Do not discard both observations merely because they disagree.
 
 If all market providers are unavailable but at least one news feed succeeded, a limited Report may continue with an explicit data gap. Never manufacture a market value, substitute an unnamed session, or let Cboe availability decide whether spreadsheet evidence is kept.
+
+## Alpaca connector fallback
+
+Read [alpaca-connector-fallback.md](alpaca-connector-fallback.md) before resolving toolAccess. `alpacaMarketData`, `alpacaOptions` and `alpacaCalendar` describe observed capabilities, not a single app identity. For each capability prefer original Alpaca then Paper Trading; both use data vendor `alpaca`. Keep actual connector/tool in temporary raw evidence, bind `data` fields exactly, and preserve returned plan order and validation. A Paper account is not market data and this path never authorizes writes.

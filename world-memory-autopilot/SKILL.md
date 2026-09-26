@@ -3,9 +3,12 @@ name: world-memory-autopilot
 description: Use when running, installing, checking, or explicitly repairing a scheduled World Memory workspace backed by the official Notion MCP.
 ---
 
+Before any Alpaca-dependent step, read [Alpaca connector fallback](references/alpaca-connector-fallback.md). Try original Alpaca first, then Alpaca Paper Trading read-only market data for an unavailable or failed capability; preserve the existing provider order and evidence gates.
+
+
 # World Memory Autopilot
 
-Version: `0.17.0`
+Version: `0.17.1`
 
 Use a validated `notion-native-v2` registry as a static address book. Prefer the embedded registry; when it is absent, accept a complete valid registry from ChatGPT memory. If neither contains the location, use only the one-shot read-only recovery in Normal scheduled operation. Data-source locators contain only dataSourceId; never add a database URL or database container ID. The two saved-view locators contain only their validated view URLs, and the market-source locator contains only the immutable approved public VIX CSV address and symbol order. Read [notion-layout.md](references/notion-layout.md) for the Hub, registry, schemas, relations, and views; [collection-and-analysis.md](references/collection-and-analysis.md) for view-mode reads, source normalization, the temporary LLM harness, page content, and Story lifecycle; [market-data.md](references/market-data.md) for independent market observations; and [deployment.md](references/deployment.md) only for recovery, setup, schedule, canary, migration, rollback, or user-approved repair work.
 
