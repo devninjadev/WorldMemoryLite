@@ -111,9 +111,7 @@ def read_feed_page(
     if type(page) is not list:
         raise ValueError("feed snapshot page is invalid")
     next_cursor = (
-        page_starts[page_index + 1]
-        if page_index + 1 < len(page_starts)
-        else None
+        page_starts[page_index + 1] if page_index + 1 < len(page_starts) else None
     )
     return {
         "snapshotId": snapshot_id,

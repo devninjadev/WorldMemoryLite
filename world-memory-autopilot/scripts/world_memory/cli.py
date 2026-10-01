@@ -10,34 +10,31 @@ from __future__ import annotations
 
 import argparse
 import csv
-from datetime import datetime, timedelta, timezone
-from email.utils import parsedate_to_datetime
-from io import StringIO
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sys
-from typing import Callable, Sequence, TextIO
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from typing import Sequence, TextIO
 
+from .extensions import extension_plan, EXTENSION_PROPERTIES
+from .entity_completion import validate_plan_request, complete_entity_review
 from .bootstrap import build_bootstrap_plan, render_scheduled_prompt
 from .discovery import resolve_registry_discovery
 from .feed import (
     FEEDS,
-    FeedItem,
     FeedOutcome,
-    FeedSpec,
     collect_feed_window,
     direct_http_fetch,
-    normalize_feed_summary,
+    parse_feed_csv,
 )
 from .feed_pages import (
     DEFAULT_SNAPSHOT_DIRECTORY,
     create_feed_snapshot,
     read_feed_page,
 )
-from .llm_plan import validate_llm_plan
 from .market import MarketSnapshot
 from .notion_layout import DATABASE_SCHEMAS, bootstrap_manifest
+from .notion_payloads import prepare_report
 from .plugin_market import (
     assess_market_observation,
     build_plugin_market_plan,
@@ -58,40 +55,6 @@ from .views import (
 )
 
 
-_COMMANDS = (
-    "validate-registry",
-    "resolve-registry-discovery",
-    "schema",
-    "bootstrap-plan",
-    "window",
-    "resolve-report-view",
-    "normalize-story-view",
-    "validate-llm-plan",
-    "render-scheduled-prompt",
-    "collect-feeds",
-    "read-feed-page",
-    "normalize-feed",
-    "market-data-plan",
-    "validate-market-observation",
-    "collect-market-data",
-    "verify-live",
-)
-_CSV_HEADERS = (
-    "ID",
-    "Feed URL",
-    "Feed Link",
-    "Feed Title",
-    "Feed Description",
-    "Feed Icon",
-    "Title",
-    "Link",
-    "Description",
-    "Image",
-    "Plain Description",
-    "Author",
-    "Date",
-)
-_TRACKING_PARAMETERS = frozenset({"fbclid", "gclid"})
 _UTC = timezone.utc
 FEED_SNAPSHOT_DIRECTORY = DEFAULT_SNAPSHOT_DIRECTORY
 _TOOL_ACCESS_KEYS_IN_ORDER = (
@@ -128,26 +91,8 @@ class _SafeArgumentParser(argparse.ArgumentParser):
 def _parser() -> argparse.ArgumentParser:
     parser = _SafeArgumentParser(prog="world-memory")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    help_text = {
-        "validate-registry": "normalize the embedded native registry",
-        "resolve-registry-discovery": "validate one-shot Notion recovery observations",
-        "schema": "return an independent logical schema manifest",
-        "bootstrap-plan": "describe a finite fresh setup",
-        "window": "resolve a supplied report-window observation",
-        "resolve-report-view": "resolve supplied saved Reports view rows",
-        "normalize-story-view": "normalize supplied saved Stories view rows",
-        "validate-llm-plan": "validate one supplied temporary plan",
-        "render-scheduled-prompt": "render the self-contained schedule prompt",
-        "collect-feeds": "directly collect the fixed RSS.app feeds for one window",
-        "read-feed-page": "read one continuation page from a collected feed snapshot",
-        "normalize-feed": "normalize one supplied RSS.app CSV payload",
-        "market-data-plan": "describe independent market observations",
-        "validate-market-observation": "validate one supplied market observation",
-        "collect-market-data": "combine supplied provider observations",
-        "verify-live": "validate supplied canary evidence only",
-    }
-    for name in _COMMANDS:
-        command = subparsers.add_parser(name, help=help_text[name])
+    for name, (description, _) in COMMANDS.items():
+        command = subparsers.add_parser(name, help=description)
         command.add_argument("input", nargs="?", default="-")
     return parser
 
@@ -226,28 +171,10 @@ def main(
 
 
 def _dispatch(command: str, value: dict[str, object]) -> dict[str, object]:
-    handlers: dict[str, Callable[[dict[str, object]], dict[str, object]]] = {
-        "validate-registry": validate_registry,
-        "resolve-registry-discovery": resolve_registry_discovery,
-        "schema": _schema,
-        "bootstrap-plan": _bootstrap_plan,
-        "window": _window,
-        "resolve-report-view": _resolve_report_view,
-        "normalize-story-view": _normalize_story_view,
-        "validate-llm-plan": _validate_llm_plan,
-        "render-scheduled-prompt": _render_scheduled_prompt,
-        "collect-feeds": _collect_feeds,
-        "read-feed-page": _read_feed_page,
-        "normalize-feed": _normalize_feed,
-        "market-data-plan": _market_data_plan,
-        "validate-market-observation": assess_market_observation,
-        "collect-market-data": _collect_market_data,
-        "verify-live": _verify_live,
-    }
-    handler = handlers.get(command)
-    if handler is None:
+    entry = COMMANDS.get(command)
+    if entry is None:
         raise _CliUsageError
-    return handler(value)
+    return entry[1](value)
 
 
 def _schema(value: dict[str, object]) -> dict[str, object]:
@@ -338,35 +265,17 @@ def _normalize_story_view(value: dict[str, object]) -> dict[str, object]:
 
 
 def _validate_llm_plan(value: dict[str, object]) -> dict[str, object]:
-    _require_exact_keys(
-        value,
-        frozenset(
-            {
-                "candidate",
-                "knownStoryIds",
-                "evidenceItemIds",
-                "expectedReportType",
-            }
-        ),
-        "validate-llm-plan input",
-    )
-    story_ids = _string_list(value["knownStoryIds"], "knownStoryIds")
-    evidence_ids = _string_list(value["evidenceItemIds"], "evidenceItemIds")
-    expected_report_type = _string(value["expectedReportType"], "expectedReportType")
-    normalized_story_ids = {
-        normalize_uuid(story_id, "knownStoryIds") for story_id in story_ids
-    }
-    return validate_llm_plan(
-        value["candidate"],
-        known_story_locators=normalized_story_ids,
-        evidence_item_ids=set(evidence_ids),
-        expected_report_type=expected_report_type,
-    )
+    return validate_plan_request(value)
 
 
 def _render_scheduled_prompt(value: dict[str, object]) -> dict[str, object]:
-    registry = Registry.from_mapping(value)
-    return {"prompt": render_scheduled_prompt(registry)}
+    if set(value) == {"registry", "entityUpgradePolicy"}:
+        registry = Registry.from_mapping(value["registry"])
+        policy = value["entityUpgradePolicy"]
+    else:
+        registry = Registry.from_mapping(value)
+        policy = "additive-entities-v1"
+    return {"prompt": render_scheduled_prompt(registry, entity_upgrade_policy=policy)}
 
 
 def _collect_feeds(value: dict[str, object]) -> dict[str, object]:
@@ -376,7 +285,11 @@ def _collect_feeds(value: dict[str, object]) -> dict[str, object]:
         "collect-feeds input",
     )
     timeout = value["timeoutSeconds"]
-    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
+    if (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or timeout <= 0
+    ):
         raise ValueError("timeoutSeconds must be a positive number")
     collected = collect_feed_window(
         direct_http_fetch,
@@ -414,7 +327,7 @@ def _normalize_feed(value: dict[str, object]) -> dict[str, object]:
         source_id=feed.id,
         source_name=feed.name,
         status="ok",
-        items=_parse_supplied_csv(feed, csv_payload),
+        items=parse_feed_csv(feed, csv_payload, strict=True)[0],
         error="",
         retryable=False,
     )
@@ -474,9 +387,7 @@ def _verify_live(value: dict[str, object]) -> dict[str, object]:
     projections = value["schemaProjections"]
     if type(projections) is not dict:
         raise ValueError("schemaProjections must be an object")
-    _require_exact_keys(
-        projections, frozenset(_DATA_SOURCE_KEYS), "schemaProjections"
-    )
+    _require_exact_keys(projections, frozenset(_DATA_SOURCE_KEYS), "schemaProjections")
     normalized_projections: dict[str, object] = {}
     registry_mapping = registry.to_mapping()
     for key in _DATA_SOURCE_KEYS:
@@ -488,9 +399,7 @@ def _verify_live(value: dict[str, object]) -> dict[str, object]:
             frozenset({"dataSourceId", "properties"}),
             "schema projection",
         )
-        data_source_id = normalize_uuid(
-            projection["dataSourceId"], "dataSourceId"
-        )
+        data_source_id = normalize_uuid(projection["dataSourceId"], "dataSourceId")
         registry_locator = registry_mapping[key]
         if type(registry_locator) is not dict:
             raise ValueError("registry locator is invalid")
@@ -506,7 +415,17 @@ def _verify_live(value: dict[str, object]) -> dict[str, object]:
             name: descriptor["type"]
             for name, descriptor in DATABASE_SCHEMAS[key]["properties"].items()
         }
-        if properties != expected:
+        allowed = {
+            **expected,
+            **{
+                name: descriptor["type"]
+                for name, descriptor in EXTENSION_PROPERTIES.get(key, {}).items()
+            },
+        }
+        if any(properties.get(name) != kind for name, kind in expected.items()) or any(
+            name not in allowed or allowed[name] != kind
+            for name, kind in properties.items()
+        ):
             raise ValueError("schema name/type projection does not match")
         normalized_projections[key] = {
             "dataSourceId": data_source_id,
@@ -516,9 +435,7 @@ def _verify_live(value: dict[str, object]) -> dict[str, object]:
     view_projections = value["viewProjections"]
     if type(view_projections) is not dict:
         raise ValueError("viewProjections must be an object")
-    _require_exact_keys(
-        view_projections, frozenset(_VIEW_BINDINGS), "viewProjections"
-    )
+    _require_exact_keys(view_projections, frozenset(_VIEW_BINDINGS), "viewProjections")
     normalized_views: dict[str, object] = {}
     registry_views = registry_mapping["views"]
     if type(registry_views) is not dict:
@@ -538,9 +455,7 @@ def _verify_live(value: dict[str, object]) -> dict[str, object]:
             raise ValueError("registry view binding is invalid")
         if projection["url"] != registry_view["url"]:
             raise ValueError("view projection URL does not match registry")
-        data_source_id = normalize_uuid(
-            projection["dataSourceId"], "view dataSourceId"
-        )
+        data_source_id = normalize_uuid(projection["dataSourceId"], "view dataSourceId")
         if data_source_id != registry_data_source["dataSourceId"]:
             raise ValueError("view projection data source does not match registry")
         if projection["configuration"] != expected_configuration:
@@ -560,91 +475,6 @@ def _verify_live(value: dict[str, object]) -> dict[str, object]:
         "schemaProjections": normalized_projections,
         "viewProjections": normalized_views,
     }
-
-
-def _parse_supplied_csv(feed: FeedSpec, text: str) -> tuple[FeedItem, ...]:
-    """Pure adapter for one configured feed; no fetcher is created or invoked."""
-
-    if text.startswith("\ufeff"):
-        raise ValueError("RSS.app CSV must not contain a BOM")
-    reader = csv.DictReader(StringIO(text))
-    if tuple(reader.fieldnames or ()) != _CSV_HEADERS:
-        raise ValueError("RSS.app CSV header does not match")
-
-    items: list[FeedItem] = []
-    for row in reader:
-        title = _collapsed(row.get("Title"))
-        date_text = _collapsed(row.get("Date"))
-        if not date_text:
-            raise ValueError("RSS.app CSV row requires a date")
-        source_url = _collapsed(row.get("Link")) or feed.url
-        canonical_url = _canonical_article_url(source_url)
-        published_at = _feed_timestamp(
-            date_text, feed.published_at_offset_minutes
-        )
-        summary_source = row.get("Plain Description")
-        if not _collapsed(summary_source):
-            summary_source = row.get("Description")
-        summary = normalize_feed_summary(summary_source)
-        if not title:
-            title = summary
-        if not title:
-            raise ValueError("RSS.app CSV row requires title or description text")
-        items.append(
-            FeedItem(
-                item_id="\x1f".join((feed.id, canonical_url, title, published_at)),
-                source_id=feed.id,
-                source_name=feed.name,
-                title=title,
-                url=source_url,
-                published_at=published_at,
-                summary=summary,
-            )
-        )
-    return tuple(items)
-
-
-def _feed_timestamp(value: str, offset_minutes: int) -> str:
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        try:
-            parsed = parsedate_to_datetime(value)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("RSS.app Date must be a timestamp") from exc
-    if parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise ValueError("RSS.app Date must include a timezone")
-    return (
-        parsed.astimezone(_UTC) + timedelta(minutes=offset_minutes)
-    ).isoformat().replace("+00:00", "Z")
-
-
-def _canonical_article_url(value: str) -> str:
-    parsed = urlparse(value)
-    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
-        raise ValueError("URL must use HTTP(S) and include a host")
-    if parsed.username is not None or parsed.password is not None:
-        raise ValueError("URL must not contain user information")
-    try:
-        port = parsed.port
-    except ValueError as exc:
-        raise ValueError("URL port is invalid") from exc
-    hostname = parsed.hostname.lower()
-    if port is not None and not (
-        (parsed.scheme.lower() == "http" and port == 80)
-        or (parsed.scheme.lower() == "https" and port == 443)
-    ):
-        hostname = f"{hostname}:{port}"
-    query = urlencode(
-        [
-            (key, item)
-            for key, item in parse_qsl(parsed.query, keep_blank_values=True)
-            if not key.lower().startswith("utm_")
-            and key.lower() not in _TRACKING_PARAMETERS
-        ],
-        doseq=True,
-    )
-    return urlunparse((parsed.scheme.lower(), hostname, parsed.path, "", query, ""))
 
 
 def _feed_outcome_mapping(outcome: FeedOutcome) -> dict[str, object]:
@@ -738,5 +568,55 @@ def _string_list(value: object, field_name: str) -> tuple[str, ...]:
     return tuple(value)
 
 
-def _collapsed(value: object) -> str:
-    return " ".join(value.split()) if type(value) is str else ""
+# One source for public command names, help, and dispatch.
+COMMANDS = {
+    "entity-extension-plan": (
+        "plan bounded additive entity schema upgrade",
+        extension_plan,
+    ),
+    "validate-registry": ("normalize the embedded native registry", validate_registry),
+    "resolve-registry-discovery": (
+        "validate one-shot Notion recovery observations",
+        resolve_registry_discovery,
+    ),
+    "schema": ("return an independent logical schema manifest", _schema),
+    "bootstrap-plan": ("describe a finite fresh setup", _bootstrap_plan),
+    "window": ("resolve a supplied report-window observation", _window),
+    "resolve-report-view": (
+        "resolve supplied saved Reports view rows",
+        _resolve_report_view,
+    ),
+    "normalize-story-view": (
+        "normalize supplied saved Stories view rows",
+        _normalize_story_view,
+    ),
+    "validate-llm-plan": ("validate one supplied temporary plan", _validate_llm_plan),
+    "complete-entity-review": (
+        "check reviewed entity proposals against observed outcomes",
+        complete_entity_review,
+    ),
+    "prepare-report": ("require entity review before building a Report request", prepare_report),
+    "render-scheduled-prompt": (
+        "render the compact schedule launcher",
+        _render_scheduled_prompt,
+    ),
+    "collect-feeds": (
+        "directly collect the fixed RSS.app feeds for one window",
+        _collect_feeds,
+    ),
+    "read-feed-page": (
+        "read one continuation page from a collected feed snapshot",
+        _read_feed_page,
+    ),
+    "normalize-feed": ("normalize one supplied RSS.app CSV payload", _normalize_feed),
+    "market-data-plan": ("describe independent market observations", _market_data_plan),
+    "validate-market-observation": (
+        "validate one supplied market observation",
+        assess_market_observation,
+    ),
+    "collect-market-data": (
+        "combine supplied provider observations",
+        _collect_market_data,
+    ),
+    "verify-live": ("validate supplied canary evidence only", _verify_live),
+}

@@ -13,7 +13,7 @@ from typing import Iterable
 import zipfile
 
 
-VERSION = "0.17.1"
+VERSION = "0.24.1"
 PACKAGE_NAME = "world-memory-autopilot"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PACKAGE = PROJECT_ROOT / PACKAGE_NAME
@@ -28,30 +28,41 @@ _REQUIRED_RELATIVE_FILES = frozenset(
         "assets/icon.svg",
         "references/collection-and-analysis.md",
         "references/deployment.md",
+        "references/entity-extension.md",
+        "references/manual-rss.md",
         "references/market-data.md",
         "references/publisher-web-search.md",
         "references/notion-layout.md",
+        "references/tradingview-prices.md",
+        "references/wolfram-fallback.md",
+        "scripts/financialjuice_feed.py",
         "scripts/world_memory/__init__.py",
         "scripts/world_memory/__main__.py",
         "scripts/world_memory/bootstrap.py",
         "scripts/world_memory/cli.py",
         "scripts/world_memory/discovery.py",
+        "scripts/world_memory/entity_completion.py",
+        "scripts/world_memory/extensions.py",
         "scripts/world_memory/feed.py",
         "scripts/world_memory/feed_pages.py",
         "scripts/world_memory/google_finance.py",
-        "scripts/world_memory/news_contract.py",
         "scripts/world_memory/llm_plan.py",
         "scripts/world_memory/market.py",
+        "scripts/world_memory/market_plan.py",
         "scripts/world_memory/notion_layout.py",
         "scripts/world_memory/notion_payloads.py",
         "scripts/world_memory/plugin_market.py",
         "scripts/world_memory/registry.py",
+        "scripts/world_memory/report_format.py",
+        "scripts/world_memory/tradingview_macro.py",
         "scripts/world_memory/windows.py",
         "scripts/world_memory/views.py",
         "scripts/world_memory/workflow.py",
+        "tests/test_financialjuice_feed.py",
+        "tests/test_required_entity_completion.py",
     }
 )
-_ALLOWED_ROOTS = frozenset({"SKILL.md", "VERSION", "requirements.txt", "agents", "assets", "references", "scripts"})
+_ALLOWED_ROOTS = frozenset({"SKILL.md", "VERSION", "requirements.txt", "agents", "assets", "references", "scripts", "tests"})
 _LEGACY_MARKERS = (
     "targeted-v1",
     "wmc1",
@@ -100,6 +111,8 @@ def _relative_files(package_dir: Path) -> list[Path]:
         if relative.parts[0] not in _ALLOWED_ROOTS:
             continue
         relative_text = relative.as_posix()
+        if relative.parts[0] == "tests" and relative_text not in _REQUIRED_RELATIVE_FILES:
+            continue
         if relative_text not in _REQUIRED_RELATIVE_FILES:
             raise _safe_error("unexpected-installable-file")
         discovered.append(relative)
@@ -117,7 +130,8 @@ def _validate_content(package_dir: Path, relative_files: Iterable[Path]) -> None
         text = (package_dir / relative).read_text(encoding="utf-8")
         if any(marker in text for marker in _LEGACY_MARKERS):
             raise _safe_error("legacy-runtime-marker")
-        if _UUID.search(text) or any(pattern.search(text) for pattern in _SECRETS):
+        # The two cloud-packaged regression files contain synthetic Notion IDs.
+        if (relative.parts[0] != "tests" and _UUID.search(text)) or any(pattern.search(text) for pattern in _SECRETS):
             raise _safe_error("sensitive-content")
 
 

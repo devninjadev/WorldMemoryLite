@@ -1,52 +1,58 @@
-# World Memory Autopilot 0.17.1
+# World Memory Autopilot 0.24.1
 
-`world-memory-autopilot-v0.17.1.zip` installs a SQL-free, Notion-native World Memory skill for ChatGPT Workspace Agents and the official Notion MCP.
+Notion에 시장 사건, 기업·산업 맥락과 변화하는 투자 관점을 누적하는 ChatGPT/Codex 스킬입니다.
+이번 릴리즈는 ChatGPT에서 다운로드한 `world-memory-autopilot` 0.24.1의 40개 파일을 그대로 반영합니다.
 
-Alpaca and Wolfram are optional connectors. When either is unavailable, the existing official and public fallbacks remain available according to the capability plan; the core Notion persistence boundary remains the official Notion MCP.
+## 설치
 
-## Install
+GitHub 릴리즈의 `world-memory-autopilot-v0.24.1.zip`을 스킬로 설치하세요.
+릴리즈 ZIP은 클라우드에서 다운로드한 원본입니다. 저장소의 해당 파일과 로컬 설치본도
+원본 ZIP의 내용과 일치합니다. 커넥터 인증, 실제 Notion 작업 공간과 예약 실행은 별도로 확인해야 합니다.
 
-1. Install `world-memory-autopilot-v0.17.1.zip` as the workspace skill.
-2. Connect the official Notion MCP. Allow setup and schema-create permissions only during bootstrap, then reduce access to normal read/write after the live canary; destructive permissions remain disabled.
-3. Run the explicit fresh bootstrap. It creates a new `World Memory · Notion Native` Hub and four database containers, each with an initial data source: `World Memory Collections`, `World Memory Stories`, `World Memory Story Changes`, and `World Memory Reports`.
-4. Configure the saved Notion views `Reports Recent` and `Stories Current`, then complete the finite schema-and-view read-back. Run the read-only public CSV canary and require the ordered VIX symbols `VIX9D`, `VIX`, `VIX3M`, and `VIX6M`; the setup must never mutate that spreadsheet.
-5. Embed the validated `notion-native-v2` registry, including the exact public VIX CSV source contract, in a regenerated scheduled prompt.
-6. Create the schedule with the six-hour default interval (`creationCadenceMinutes=360`). Confirm an existing active schedule's live setting rather than assuming it changed.
+전체 실행 지침은 [SKILL.md](world-memory-autopilot/SKILL.md)에 있습니다.
+기존 설치를 연결하거나 초기 구조를 만들 때는
+[deployment.md](world-memory-autopilot/references/deployment.md)와
+[notion-layout.md](world-memory-autopilot/references/notion-layout.md)를 따르세요.
+로컬 스킬 설치만으로 기존 Hub, 데이터베이스, 예약 설정을 변경하지 않습니다.
 
-The registry is an immutable installation address book for the workspace, Hub, four data sources, two saved views, and the approved public market source. Hub addresses retain `pageId` plus its page URL; data source addresses retain only `dataSourceId`, not database container IDs or URLs; view addresses retain only their exact URL. `marketSources.vixSpreadsheet` retains only the exact public CSV URL and ordered symbols, never observations or fetch state. Do not put credentials or mutable run state in it.
+## 이번 버전의 동작
 
-## Normal operation
+- 중요한 사건을 먼저 찾고, 신뢰할 만한 매체의 사실 보도는 출처와 함께 사용합니다.
+  제안, 협상, 익명 취재, 전망과 의견은 각각의 불확실성을 보존합니다.
+- FinancialJuice, First Squawk, Reuters, Dow Jones와 Bloomberg XML 피드를 보조 검색 자료로 사용합니다.
+  실행별로 성공과 실패를 한 번 수집해 재사용하며, 날짜가 없는 항목을 수집 시각으로 대체하지 않습니다.
+- 기업, 정책, 안보, 산업과 거시 사건을 폭넓게 검토합니다. 보통 3–8개 사건을 선택하되
+  사건의 중요도에 따라 수를 조절하고 동일 주제에 과도하게 집중하지 않습니다.
+- 기업·산업·사건 확장이 활성화되고 준비된 경우, 모든 근거 묶음의 검토를 완료해야
+  `prepare-report`가 보고서 생성 요청을 반환합니다. 검토 누락을 보고서만 생성하는 경로로 우회하지 않습니다.
+- 보고서 저장 후 계획된 기업·산업·사건과 Story 관계를 처리하고,
+  `complete-entity-review`로 확인된 결과와 미완료 작업을 구분합니다.
+- 검토 결정, 내부 사유와 처리 집계는 실행 중에만 유지하고 보고서 본문에 넣지 않습니다.
+- 지원되는 시장 자료는 TradingView를 우선하며 VIX에는 별도 제공자 경로를 사용합니다.
+  Alpaca와 Wolfram 등 대안은 현재 접근 가능한 도구와 필드별 결과에 따라 적용합니다.
+- 같은 시간창의 보고서가 있으면 재사용하고, 저장 실패·불확실·표시 가능한 URL 부재 시
+  생성한 본문과 실제 저장 상태를 반환합니다.
 
-The skill first validates its embedded registry, or a complete valid registry in ChatGPT memory when the embedded location is absent. If neither contains the World Memory location, it performs one exact-title Notion search for `World Memory · Notion Native`, fetches only those candidates, and accepts only one workspace-root Hub carrying the exact `notion-native-v2` marker whose four child databases and two saved views match the expected structure. Missing, ambiguous, or mismatched results stop with a bounded error. Recovery is read-only: it neither persists the recovered address nor changes or repairs Notion.
+이 스킬은 Python 표준 라이브러리를 사용합니다. 보조 XML 수집기는 curl을 사용합니다.
+핵심 지속 저장은 공식 Notion MCP를 통해 수행하며, 스킬 설치가 연결 권한이나 자동매매를 만들지 않습니다.
 
-Each window first reads `Reports Recent` through the official Notion MCP query tool's explicit view mode and reuses an existing Report when present. The scheduled prompt never sends SQL-shaped input, never invokes the SQL backend, and has no SQL fallback. A new run uses publisher web search with claim-level verification and independent market observations, writes a readable Collection, creates exactly one Report, and reads `Stories Current` only for six-hour Story integration when due. It does not query recent Collections. Stories retain the current market thesis; Story Changes explain confirmed material creates or updates.
+## 검증과 패키징
 
-Runtime timestamps and Report window dates are deterministically converted to whole UTC minutes before comparison, computation, and storage. This matches the Notion date surface, so a second-bearing invocation reuses the minute-aligned Report returned by `Reports Recent` instead of creating a narrow duplicate window.
+클라우드에 포함된 26개 테스트와 릴리즈 도구의 10개 테스트가 통과했습니다.
+Python 파일 구문, ZIP 무결성, 40개 파일의 원본·저장소·설치본 일치도 확인했습니다.
 
-A partial source failure does not erase successful news or market observations. In particular, Cboe failure does not discard Google Finance or spreadsheet results. Feed descriptions become readable plain text through one HTML boundary before analysis. Normal collection uses an evidence-sufficiency gate: corroborated search evidence remains successful even when article bodies are inaccessible. RSS collection is retained for manual transport diagnosis only. Storage or source gaps remain visible in the result.
+```sh
+PYTHONPATH=world-memory-autopilot/scripts python3 -B -m unittest discover -s world-memory-autopilot/tests -p test_required_entity_completion.py -v
+PYTHONPATH=world-memory-autopilot/scripts python3 -B -m unittest discover -s world-memory-autopilot/tests -p test_financialjuice_feed.py -v
+python3 -B -m unittest discover -s tests -p test_release_builder.py -v
+python3 scripts/build_world_memory_release.py
+```
 
-Version 0.17.1 uses six-publisher web search as the normal news acquisition path, verifies material claims, and distinguishes corroborated reporting from search-summary-only evidence. Google Finance quote pages are the first VIX source; the spreadsheet is an optional last fallback. Alpaca daily bars are first for HYG/LQD and RSP/SPY. WALCL, TGA and RRP remain economic series and are never replaced with ETF prices. Market observations retain field-level evidence validation and provider provenance.
+릴리즈 도구는 클라우드와 동일한 40개 파일을 결정적으로 묶습니다. ZIP 압축 메타데이터는
+클라우드 원본과 다를 수 있지만, 각 파일의 바이트 내용은 일치해야 합니다.
+그 밖의 개발 테스트, 캐시와 실행 기록은 릴리즈에 포함하지 않습니다.
 
-Legacy RSS transport remains available for explicit manual diagnostics. Normal search-mode Collection content follows the publisher-search reference.
-
-The external reservation remains exactly six hours (`creationCadenceMinutes=360`), while Story integration becomes due after 345 elapsed minutes. This keeps the user-visible six-hour schedule unchanged and prevents normal scheduler delivery variance from demoting a nominal six-hour run to a briefing.
-
-Each Report uses one generated thesis H1 followed by `Key Takeaway`, `시장 현황`, `중장기 맥락`, `주요 지표들`, `지켜봐야 할 것들`, `관심을 가져볼 만한 이슈들`, and `출처·데이터 안내`. Semantic evidence clusters cover every supplied item exactly once; high-importance evidence can be visible in the Report without forcing a Story write. Confirmed new or reused Reports return their Notion link without duplicating the body, while failed, uncertain, or URL-less delivery returns the generated Markdown fallback.
-
-Normal runs trust ordinary synchronous Notion success, avoid routine verification calls, and keep setup, saved-view changes, schema changes, deletion, movement, and repair outside scheduled operation. The payload adapter preserves each logical leading H1 by sending a harmless empty block before it.
-
-## Upgrade from v0.11.x
-
-v0.11.x migrations must pause the existing schedule, explicitly regenerate the `notion-native-v2` registry and prompt under setup permission, validate `Reports Recent` and `Stories Current` with a saved-view canary plus the public CSV source in read-only mode, then resume. The four Notion schemas do not change; existing Reports and Stories remain readable, and type-agnostic same-window reuse continues across the boundary. The scheduled skill never guesses view URLs, mutates a view or spreadsheet, or upgrades itself.
-
-## Existing installations and rollback
-
-Old `0.10.x` artifacts are rollback-only archives. Their Hubs and records are not auto-migrated, adopted, merged, or deleted by 0.17.1. Install the new release into a clean Hub, pause the old schedule, verify the new schedule, and keep the old Hub as an independent reference. Rollback means stopping the new schedule and deciding separately whether to reactivate an older one; it does not require deletion.
-
-Live acceptance requires a new test Hub and actual Workspace Agent receipts. Local verification does not prove live Alpaca, Wolfram, Workspace, or Notion acceptance and does not claim that a live canary has run.
-
-After a successful verified build, the release builder keeps only the newly built versioned World Memory ZIP in that output directory. It removes only exact sibling `world-memory-autopilot-v*.zip` regular files after atomic verification; unrelated ZIPs, directories, symlinks, and files outside that directory are untouched. A failed build preserves every existing release artifact and leaves no temporary archive.
-
-## Alpaca Paper Trading fallback
-
-Use original Alpaca first, then Paper Trading read-only market data when the required capability fails or is unavailable. Preserve provider order and field-level validation; no orders or account writes. See the bundled references/alpaca-connector-fallback.md.
+이전 0.17 계열의 개발 회귀 테스트는 보존되어 있습니다. 일부는 현재의 제공자 계획,
+보고서 검토 입력과 CLI 계약과 맞지 않아 실패하며, 전체 과거 회귀 테스트가 통과했다고
+주장하지 않습니다. 실제 Workspace Agent, Notion 쓰기, 시장 커넥터와 예약 실행의
+성공은 이 로컬 검증 범위에 포함되지 않습니다.

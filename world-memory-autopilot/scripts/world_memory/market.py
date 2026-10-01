@@ -41,9 +41,15 @@ def collect_market_providers(
     providers: Iterable[tuple[str, MarketAdapter]], *, max_workers: int = 5
 ) -> tuple[ProviderResult, ...]:
     """Run independent adapters concurrently without leaking an adapter exception."""
-    if isinstance(max_workers, bool) or not isinstance(max_workers, int) or max_workers <= 0:
+    if (
+        isinstance(max_workers, bool)
+        or not isinstance(max_workers, int)
+        or max_workers <= 0
+    ):
         raise ValueError("max_workers must be a positive integer")
-    configured = tuple((_require_provider(name), adapter) for name, adapter in providers)
+    configured = tuple(
+        (_require_provider(name), adapter) for name, adapter in providers
+    )
     if not all(callable(adapter) for _, adapter in configured):
         raise ValueError("market adapters must be callable")
     if not configured:
@@ -160,8 +166,14 @@ def _normalize_result(result: ProviderResult) -> ProviderResult:
             raise ValueError("ok provider results require only nonempty values")
         return ProviderResult(provider, "ok", dict(result.values), "")
     if result.status == "error":
-        if result.values or not result.error.strip() or result.stage not in {"fetch", "parse"}:
-            raise ValueError("error provider results require an attempted failure stage")
+        if (
+            result.values
+            or not result.error.strip()
+            or result.stage not in {"fetch", "parse"}
+        ):
+            raise ValueError(
+                "error provider results require an attempted failure stage"
+            )
         safe_error = (
             result.error
             if result.error in SAFE_PROVIDER_RESULT_ERRORS
@@ -169,20 +181,16 @@ def _normalize_result(result: ProviderResult) -> ProviderResult:
         )
         return ProviderResult(provider, "error", {}, safe_error, result.stage)
     if result.status == "partial":
-        if (
-            not result.values
-            or result.error not in _PARTIAL_GAP_CODES
-            or result.stage
-        ):
+        if not result.values or result.error not in _PARTIAL_GAP_CODES or result.stage:
             raise ValueError(
                 "partial provider results require values and a safe gap code"
             )
-        return ProviderResult(
-            provider, "partial", dict(result.values), result.error
-        )
+        return ProviderResult(provider, "partial", dict(result.values), result.error)
     if result.status == "not-attempted":
         if result.values or result.error or result.stage:
-            raise ValueError("not-attempted provider results cannot contain observations")
+            raise ValueError(
+                "not-attempted provider results cannot contain observations"
+            )
         return ProviderResult(provider, "not-attempted", {}, "")
     raise ValueError("provider status is invalid")
 

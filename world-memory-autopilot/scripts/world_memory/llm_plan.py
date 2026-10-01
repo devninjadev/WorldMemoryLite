@@ -13,6 +13,14 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Callable
 
+from .report_format import (
+    _REPORT_MARKDOWN_H2S,
+    _markdown_headings,
+    _report_section_lines,
+    _validate_key_takeaway,
+    _validate_narrative_section,
+)
+from .extensions import validate_entity_plan, validate_entity_review
 from .notion_layout import DATABASE_SCHEMAS
 
 
@@ -43,15 +51,6 @@ REPORT_SECTION_IDS = (
     "watch-items",
     "issues-of-interest",
     "sources-and-data",
-)
-_REPORT_MARKDOWN_H2S = (
-    "## Key Takeaway",
-    "## 시장 현황",
-    "## 중장기 맥락",
-    "## 주요 지표들",
-    "## 지켜봐야 할 것들",
-    "## 관심을 가져볼 만한 이슈들",
-    "## 출처·데이터 안내",
 )
 _STORY_MARKDOWN_SECTIONS = (
     "# 현재 판단",
@@ -127,6 +126,7 @@ class ValidationContext:
     known_story_locators: frozenset[str]
     evidence_item_ids: frozenset[str]
     expected_report_type: str
+    entity_review_required: bool
 
 
 @dataclass(frozen=True)
@@ -163,7 +163,12 @@ def _add_exact_keys(
 
 
 def _required_string(
-    mapping: dict[str, object], key: str, *, label: str, errors: list[str], nonempty: bool = False
+    mapping: dict[str, object],
+    key: str,
+    *,
+    label: str,
+    errors: list[str],
+    nonempty: bool = False,
 ) -> str | None:
     value = mapping.get(key)
     if not _is_string(value):
@@ -182,17 +187,13 @@ def _required_markdown(
     required_sections: tuple[str, ...],
     errors: list[str],
 ) -> str | None:
-    value = _required_string(
-        mapping, key, label=label, errors=errors, nonempty=True
-    )
+    value = _required_string(mapping, key, label=label, errors=errors, nonempty=True)
     if value is None or not value.strip():
         return value
     field_label = f"{label}.{key}"
     headings = _markdown_headings(value)
     if not headings or headings[0] != required_sections[0]:
-        errors.append(
-            f"{field_label} first heading must be {required_sections[0]}"
-        )
+        errors.append(f"{field_label} first heading must be {required_sections[0]}")
         return value
     h1_headings = tuple(
         heading
@@ -208,9 +209,7 @@ def _required_markdown(
         try:
             cursor = headings.index(required, cursor + 1)
         except ValueError:
-            errors.append(
-                f"{field_label} required sections must appear in order"
-            )
+            errors.append(f"{field_label} required sections must appear in order")
             break
     return value
 
@@ -223,9 +222,7 @@ def _required_report_markdown(
     report_type: str | None,
     errors: list[str],
 ) -> str | None:
-    value = _required_string(
-        mapping, key, label=label, errors=errors, nonempty=True
-    )
+    value = _required_string(mapping, key, label=label, errors=errors, nonempty=True)
     if value is None or not value.strip():
         return value
 
@@ -268,191 +265,6 @@ def _required_report_markdown(
     return value
 
 
-def _report_section_lines(value: str) -> dict[str, tuple[str, ...]]:
-    """Return visible block-level lines for each approved Report H2 section."""
-
-    sections: dict[str, list[str]] = {
-        heading: [] for heading in _REPORT_MARKDOWN_H2S
-    }
-    current: str | None = None
-    fence: tuple[str, int] | None = None
-
-    for line in value.splitlines():
-        content = _markdown_block_content(line)
-        if content is None:
-            if current is not None and sections[current] and sections[current][-1] != "":
-                sections[current].append("")
-            continue
-
-        if fence is not None:
-            candidate = _fence_run(content)
-            if (
-                candidate is not None
-                and candidate[0] == fence[0]
-                and candidate[1] >= fence[1]
-                and not candidate[2].strip(" \t")
-            ):
-                fence = None
-                if current is not None and sections[current] and sections[current][-1] != "":
-                    sections[current].append("")
-            continue
-
-        candidate = _fence_run(content)
-        if candidate is not None and not (
-            candidate[0] == "`" and "`" in candidate[2]
-        ):
-            fence = candidate[0], candidate[1]
-            if current is not None and sections[current] and sections[current][-1] != "":
-                sections[current].append("")
-            continue
-
-        heading = content.rstrip()
-        if heading in sections:
-            current = heading
-            continue
-        if current is not None:
-            sections[current].append(content.rstrip())
-
-    return {heading: tuple(lines) for heading, lines in sections.items()}
-
-
-def _markdown_list_item(line: str) -> tuple[str, str] | None:
-    """Classify one visible CommonMark block-level list marker."""
-
-    if len(line) >= 2 and line[0] in "-+*" and line[1] in " \t":
-        return "unordered", line[2:].strip()
-
-    index = 0
-    while index < len(line) and line[index].isdigit():
-        index += 1
-    if (
-        1 <= index <= 9
-        and index + 1 < len(line)
-        and line[index] in ".)"
-        and line[index + 1] in " \t"
-    ):
-        return "ordered", line[index + 2 :].strip()
-    return None
-
-
-def _validate_key_takeaway(
-    lines: tuple[str, ...], *, field_label: str, errors: list[str]
-) -> None:
-    visible = [line for line in lines if line.strip()]
-    items = [_markdown_list_item(line) for line in visible]
-    if (
-        not 3 <= len(items) <= 5
-        or any(item is None or item[0] != "unordered" or not item[1] for item in items)
-    ):
-        errors.append(
-            f"{field_label} Key Takeaway must contain 3 to 5 nonempty unordered list items"
-        )
-
-
-def _prose_paragraph_count(lines: tuple[str, ...]) -> int:
-    count = 0
-    inside_paragraph = False
-    for line in lines:
-        if line.strip():
-            if not inside_paragraph:
-                count += 1
-                inside_paragraph = True
-        else:
-            inside_paragraph = False
-    return count
-
-
-def _validate_narrative_section(
-    lines: tuple[str, ...],
-    *,
-    heading: str,
-    report_type: str,
-    minimum: int,
-    field_label: str,
-    errors: list[str],
-) -> None:
-    section_name = heading.removeprefix("## ")
-    visible = [line for line in lines if line.strip()]
-    has_nonprose_block = any(
-        _markdown_list_item(line) is not None or line.lstrip().startswith("#")
-        for line in visible
-    )
-    if has_nonprose_block:
-        errors.append(
-            f"{field_label} {section_name} must use prose paragraphs without top-level lists or headings"
-        )
-        return
-
-    paragraph_count = _prose_paragraph_count(lines)
-    if paragraph_count < minimum:
-        errors.append(
-            f"{field_label} {section_name} must contain at least {minimum} prose paragraphs for {report_type}"
-        )
-
-
-def _markdown_headings(value: str) -> tuple[str, ...]:
-    headings: list[str] = []
-    fence: tuple[str, int] | None = None
-    for line in value.splitlines():
-        content = _markdown_block_content(line)
-        if content is None:
-            continue
-
-        if fence is not None:
-            candidate = _fence_run(content)
-            if (
-                candidate is not None
-                and candidate[0] == fence[0]
-                and candidate[1] >= fence[1]
-                and not candidate[2].strip(" \t")
-            ):
-                fence = None
-            continue
-
-        candidate = _fence_run(content)
-        if candidate is not None and not (
-            candidate[0] == "`" and "`" in candidate[2]
-        ):
-            fence = candidate[0], candidate[1]
-            continue
-
-        heading = content.rstrip()
-        prefix, separator, _ = heading.partition(" ")
-        if separator and 1 <= len(prefix) <= 6 and set(prefix) == {"#"}:
-            headings.append(heading)
-    return tuple(headings)
-
-
-def _markdown_block_content(line: str) -> str | None:
-    """Return content at CommonMark block indentation, or ignore code indentation."""
-
-    column = 0
-    offset = 0
-    while offset < len(line) and line[offset] in (" ", "\t"):
-        if line[offset] == " ":
-            column += 1
-        else:
-            column += 4 - (column % 4)
-        offset += 1
-        if column > 3:
-            return None
-    return line[offset:]
-
-
-def _fence_run(content: str) -> tuple[str, int, str] | None:
-    """Return a possible fenced-code marker character, width, and remainder."""
-
-    if not content or content[0] not in ("`", "~"):
-        return None
-    marker = content[0]
-    width = 0
-    while width < len(content) and content[width] == marker:
-        width += 1
-    if width < 3:
-        return None
-    return marker, width, content[width:]
-
-
 def _string_list(
     mapping: dict[str, object], key: str, *, label: str, errors: list[str]
 ) -> list[str] | None:
@@ -460,7 +272,9 @@ def _string_list(
     if type(value) is not list:
         errors.append(f"{label}.{key} must be a list of strings")
         return None
-    invalid_indexes = [str(index) for index, item in enumerate(value) if not _is_string(item)]
+    invalid_indexes = [
+        str(index) for index, item in enumerate(value) if not _is_string(item)
+    ]
     if invalid_indexes:
         errors.append(
             f"{label}.{key} must contain only strings; invalid indexes: {', '.join(invalid_indexes)}"
@@ -513,9 +327,7 @@ def _validate_evidence_clusters(
             else:
                 seen_cluster_ids.add(cluster_id)
 
-        importance = _required_string(
-            cluster, "importance", label=label, errors=errors
-        )
+        importance = _required_string(cluster, "importance", label=label, errors=errors)
         _one_of(
             importance,
             allowed=LEVELS,
@@ -581,14 +393,10 @@ def _validate_evidence_clusters(
             )
             for story_locator in story_locators:
                 if story_locator not in known_story_locators:
-                    errors.append(
-                        f"{label}.storyLocators must contain known locators"
-                    )
+                    errors.append(f"{label}.storyLocators must contain known locators")
 
     if covered_evidence != evidence_item_ids:
-        errors.append(
-            "evidenceClusters must cover every evidence item exactly once"
-        )
+        errors.append("evidenceClusters must cover every evidence item exactly once")
 
 
 def validate_llm_plan(
@@ -597,6 +405,7 @@ def validate_llm_plan(
     known_story_locators: set[str],
     evidence_item_ids: set[str],
     expected_report_type: str,
+    entity_review_required: bool,
 ) -> dict[str, object]:
     """Return an independent accepted plan or raise one aggregate ``ValueError``.
 
@@ -605,7 +414,15 @@ def validate_llm_plan(
     """
 
     errors: list[str] = []
-    plan = _add_exact_keys(value, expected=_TOP_LEVEL_KEYS, label="plan", errors=errors)
+    if type(entity_review_required) is not bool:
+        raise ValueError("entity_review_required must be boolean")
+    expected_keys = _TOP_LEVEL_KEYS | (
+        {key for key in ("entityPlan", "entityReview") if key in value}
+        if type(value) is dict else set()
+    )
+    if entity_review_required:
+        expected_keys |= {"entityPlan", "entityReview"}
+    plan = _add_exact_keys(value, expected=expected_keys, label="plan", errors=errors)
     if plan is None:
         raise ValueError("; ".join(errors))
 
@@ -619,10 +436,19 @@ def validate_llm_plan(
             errors.append("report.type does not match expected_report_type")
         stance = _required_string(report, "stance", label="report", errors=errors)
         _one_of(stance, allowed=_STANCES, label="report.stance", errors=errors)
-        confidence = _required_string(report, "confidence", label="report", errors=errors)
+        confidence = _required_string(
+            report, "confidence", label="report", errors=errors
+        )
         _one_of(confidence, allowed=LEVELS, label="report.confidence", errors=errors)
-        data_quality = _required_string(report, "dataQuality", label="report", errors=errors)
-        _one_of(data_quality, allowed=_DATA_QUALITIES, label="report.dataQuality", errors=errors)
+        data_quality = _required_string(
+            report, "dataQuality", label="report", errors=errors
+        )
+        _one_of(
+            data_quality,
+            allowed=_DATA_QUALITIES,
+            label="report.dataQuality",
+            errors=errors,
+        )
         _string_list(report, "dataGaps", label="report", errors=errors)
         _required_report_markdown(
             report,
@@ -646,8 +472,15 @@ def validate_llm_plan(
                 continue
 
             action = _required_string(decision, "action", label=label, errors=errors)
-            _one_of(action, allowed=("create", "update"), label=f"{label}.action", errors=errors)
-            locator = _required_string(decision, "storyLocator", label=label, errors=errors)
+            _one_of(
+                action,
+                allowed=("create", "update"),
+                label=f"{label}.action",
+                errors=errors,
+            )
+            locator = _required_string(
+                decision, "storyLocator", label=label, errors=errors
+            )
             if action == "create" and locator is not None and locator != "":
                 errors.append(f"{label}.storyLocator must be empty for action=create")
             elif action == "update":
@@ -656,35 +489,67 @@ def validate_llm_plan(
                         f"{label}.storyLocator must be nonempty for action=update"
                     )
                 elif locator is not None and locator not in known_story_locators:
-                    errors.append(f"{label}.storyLocator must be a known locator for action=update")
+                    errors.append(
+                        f"{label}.storyLocator must be a known locator for action=update"
+                    )
                 if locator and locator in seen_update_locators:
                     errors.append("duplicate storyLocator in storyDecisions")
                 if locator:
                     seen_update_locators.add(locator)
 
-            _required_string(decision, "name", label=label, errors=errors, nonempty=True)
+            _required_string(
+                decision, "name", label=label, errors=errors, nonempty=True
+            )
             status = _required_string(decision, "status", label=label, errors=errors)
             _one_of(status, allowed=_STATUSES, label=f"{label}.status", errors=errors)
-            category = _required_string(decision, "category", label=label, errors=errors, nonempty=True)
-            _one_of(category, allowed=_CATEGORIES, label=f"{label}.category", errors=errors)
+            category = _required_string(
+                decision, "category", label=label, errors=errors, nonempty=True
+            )
+            _one_of(
+                category, allowed=_CATEGORIES, label=f"{label}.category", errors=errors
+            )
             regions = _string_list(decision, "regions", label=label, errors=errors)
             if regions is not None:
                 for region in regions:
-                    _one_of(region, allowed=_REGIONS, label=f"{label}.regions", errors=errors)
-            change_type = _required_string(decision, "changeType", label=label, errors=errors)
-            _one_of(change_type, allowed=CHANGE_TYPES, label=f"{label}.changeType", errors=errors)
-            direction = _required_string(decision, "direction", label=label, errors=errors)
-            _one_of(direction, allowed=DIRECTIONS, label=f"{label}.direction", errors=errors)
-            importance = _required_string(decision, "importance", label=label, errors=errors)
-            _one_of(importance, allowed=LEVELS, label=f"{label}.importance", errors=errors)
-            decision_confidence = _required_string(decision, "confidence", label=label, errors=errors)
+                    _one_of(
+                        region,
+                        allowed=_REGIONS,
+                        label=f"{label}.regions",
+                        errors=errors,
+                    )
+            change_type = _required_string(
+                decision, "changeType", label=label, errors=errors
+            )
+            _one_of(
+                change_type,
+                allowed=CHANGE_TYPES,
+                label=f"{label}.changeType",
+                errors=errors,
+            )
+            direction = _required_string(
+                decision, "direction", label=label, errors=errors
+            )
+            _one_of(
+                direction, allowed=DIRECTIONS, label=f"{label}.direction", errors=errors
+            )
+            importance = _required_string(
+                decision, "importance", label=label, errors=errors
+            )
+            _one_of(
+                importance, allowed=LEVELS, label=f"{label}.importance", errors=errors
+            )
+            decision_confidence = _required_string(
+                decision, "confidence", label=label, errors=errors
+            )
             _one_of(
                 decision_confidence,
                 allowed=LEVELS,
                 label=f"{label}.confidence",
                 errors=errors,
             )
-            _required_string(decision, "currentView", label=label, errors=errors, nonempty=True)
+            _required_string(
+                decision, "currentView", label=label, errors=errors, nonempty=True
+            )
             _required_markdown(
                 decision,
                 "storyMarkdown",
@@ -715,11 +580,15 @@ def validate_llm_plan(
                 errors.append(
                     f"{label}.relationship-changed requires relatedStoryLocators with a known Story"
                 )
-            item_ids = _string_list(decision, "evidenceItemIds", label=label, errors=errors)
+            item_ids = _string_list(
+                decision, "evidenceItemIds", label=label, errors=errors
+            )
             if item_ids is not None:
                 for item_id in item_ids:
                     if item_id not in evidence_item_ids:
-                        errors.append(f"{label}.evidenceItemIds must contain known item IDs")
+                        errors.append(
+                            f"{label}.evidenceItemIds must contain known item IDs"
+                        )
 
     _validate_evidence_clusters(
         plan.get("evidenceClusters"),
@@ -730,14 +599,21 @@ def validate_llm_plan(
 
     if errors:
         raise ValueError("; ".join(errors))
+    if "entityPlan" in plan:
+        validate_entity_plan(plan["entityPlan"], evidence_item_ids,
+                             require_company_memory=entity_review_required)
+    if "entityReview" in plan:
+        if "entityPlan" not in plan:
+            raise ValueError("entityReview requires entityPlan")
+        validate_entity_review(plan["entityReview"], plan["entityPlan"],
+                               plan["evidenceClusters"], plan["report"]["dataGaps"])
     return deepcopy(plan)
 
 
 def _is_sensitive_key(key: str) -> bool:
     compact = key.replace("-", "").replace("_", "").lower()
     return any(
-        sensitive.replace("_", "") in compact
-        for sensitive in _SENSITIVE_KEY_PARTS
+        sensitive.replace("_", "") in compact for sensitive in _SENSITIVE_KEY_PARTS
     )
 
 
@@ -755,7 +631,9 @@ def _safe_evidence_copy(value: object) -> object:
     return deepcopy(value)
 
 
-def _repair_payload(input_payload: dict[str, object], errors: tuple[str, ...]) -> dict[str, object]:
+def _repair_payload(
+    input_payload: dict[str, object], errors: tuple[str, ...]
+) -> dict[str, object]:
     evidence = input_payload.get("evidence", [])
     return {
         "evidence": _safe_evidence_copy(evidence),
@@ -778,6 +656,7 @@ def _attempt(
             known_story_locators=set(context.known_story_locators),
             evidence_item_ids=set(context.evidence_item_ids),
             expected_report_type=context.expected_report_type,
+            entity_review_required=context.entity_review_required,
         )
     except ValueError as exc:
         return None, tuple(str(exc).split("; "))

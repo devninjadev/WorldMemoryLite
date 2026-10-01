@@ -20,8 +20,7 @@ _VIX_PUBLIC_CSV_URL = (
     "15xqjZq8di2UqrePpYR_p72j5FCj-WTEDC4rdjZSqc_w/export?format=csv&gid=0"
 )
 _VIX_PUBLIC_CSV_PATH = (
-    "/spreadsheets/d/"
-    "15xqjZq8di2UqrePpYR_p72j5FCj-WTEDC4rdjZSqc_w/export"
+    "/spreadsheets/d/15xqjZq8di2UqrePpYR_p72j5FCj-WTEDC4rdjZSqc_w/export"
 )
 _VIX_SYMBOLS = ("VIX9D", "VIX", "VIX3M", "VIX6M")
 
@@ -87,6 +86,7 @@ class Registry:
     reports_recent: ViewLocator
     stories_current: ViewLocator
     market_sources: MarketSources
+    entity_sources: dict[str, DataSourceLocator] | None = None
 
     @classmethod
     def from_mapping(cls, value: object) -> "Registry":
@@ -101,7 +101,10 @@ class Registry:
             "views",
             "marketSources",
         }
-        if not isinstance(value, dict) or set(value) != expected:
+        if not isinstance(value, dict) or set(value) not in (
+            expected,
+            expected | {"entitySources"},
+        ):
             raise ValueError("registry keys must match notion-native-v2")
         if value["schemaVersion"] != SCHEMA_VERSION:
             raise ValueError("schemaVersion must be notion-native-v2")
@@ -122,11 +125,22 @@ class Registry:
             reports_recent=parse_view_locator(views["reportsRecent"]),
             stories_current=parse_view_locator(views["storiesCurrent"]),
             market_sources=parse_market_sources(value["marketSources"]),
+            entity_sources=_parse_entity_sources(value),
         )
 
     def to_mapping(self) -> dict[str, object]:
         """Return the canonical prompt-safe JSON-compatible registry mapping."""
         return {
+            **(
+                {
+                    "entitySources": {
+                        k: data_source_locator_to_mapping(v)
+                        for k, v in self.entity_sources.items()
+                    }
+                }
+                if self.entity_sources is not None
+                else {}
+            ),
             "schemaVersion": self.schema_version,
             "workspaceId": self.workspace_id,
             "hub": page_locator_to_mapping(self.hub),
@@ -277,7 +291,9 @@ def notion_page_id_from_url(url: object) -> str:
     parsed = urlparse(url)
     hostname = (parsed.hostname or "").lower()
     if parsed.scheme != "https" or not is_first_party_notion_hostname(hostname):
-        raise ValueError("Notion URL must use a first-party notion.so or notion.com host")
+        raise ValueError(
+            "Notion URL must use a first-party notion.so or notion.com host"
+        )
     if parsed.username is not None or parsed.password is not None:
         raise ValueError("Notion URL must not contain credentials")
     try:
@@ -339,3 +355,22 @@ def market_sources_to_mapping(value: MarketSources) -> dict[str, object]:
             "expectedSymbols": list(source.expected_symbols),
         }
     }
+
+
+def _parse_entity_sources(registry):
+    if "entitySources" not in registry:
+        return None
+    value = registry["entitySources"]
+    if type(value) is not dict or not set(value).issubset(
+        {"companies", "industries", "events"}
+    ):
+        raise ValueError("invalid entity source roles")
+    result = {k: parse_data_source_locator(v) for k, v in value.items()}
+    ids = [v.data_source_id for v in result.values()]
+    core = {
+        normalize_uuid(registry[k]["dataSourceId"], k)
+        for k in ("collections", "stories", "storyChanges", "reports")
+    }
+    if len(set(ids)) != len(ids) or core.intersection(ids):
+        raise ValueError("entity source collision")
+    return result

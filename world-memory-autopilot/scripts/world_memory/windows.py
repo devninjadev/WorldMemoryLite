@@ -123,7 +123,11 @@ def resolve_same_window(reports: object, window: Window) -> ReportDecision:
 
 def _require_utc(value: object, field_name: str) -> datetime:
     """Require an aware datetime and canonicalize it to UTC without precision loss."""
-    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+    if (
+        not isinstance(value, datetime)
+        or value.tzinfo is None
+        or value.utcoffset() is None
+    ):
         raise ValueError(f"{field_name} must be a timezone-aware datetime")
     return value.astimezone(UTC)
 

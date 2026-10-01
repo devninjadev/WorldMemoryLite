@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 
 from .feed import FeedItem, FeedOutcome, deduplicate_items
 from .llm_plan import CHANGE_TYPES, DIRECTIONS, LEVELS
+from .entity_completion import validate_plan_request, review_required
 from .market import MarketSnapshot, ProviderResult, validate_market_snapshot
 from .notion_layout import DATABASE_SCHEMAS
 from .registry import Registry, normalize_uuid
@@ -81,13 +82,14 @@ def collection_page(
 def report_page(
     registry: Registry,
     window: Window,
-    validated_plan: dict[str, object],
+    validation: dict[str, object],
     relations: object = (),
 ) -> dict[str, object]:
-    """Return one readable Report request from an already validated LLM plan."""
+    """Build a Report only after internal review; never store review control data."""
 
     registry = _require_registry(registry)
     window = _require_window(window)
+    validated_plan = validate_plan_request(validation)
     report = _validated_report(validated_plan)
     properties: dict[str, object] = {
         "Name": f"World Memory · {_window_label(window)}",
@@ -105,6 +107,47 @@ def report_page(
 
     markdown = _nonempty_string(report["markdown"], "report.markdown")
     return _create_request(registry.reports.data_source_id, properties, markdown)
+
+
+def prepare_report(value):
+    """Return missing review work to the caller, or a fully reviewed Report payload."""
+    if type(value) is not dict or set(value) != {"registry", "window", "validation", "relations"}:
+        raise ValueError("invalid prepare-report fields")
+    validation = value["validation"]
+    if type(validation) is not dict:
+        raise ValueError("invalid validation request")
+    context = validation.get("entityContext")
+    required = review_required(context)
+    candidate = validation.get("candidate")
+    if type(candidate) is not dict:
+        raise ValueError("invalid candidate")
+    if required:
+        clusters = candidate.get("evidenceClusters")
+        if type(clusters) is not list:
+            raise ValueError("evidence clusters required before review")
+        review = candidate.get("entityReview")
+        review_fields = {"clusterId", "disposition", "companyKeys", "industryKeys", "eventKeys", "reason"}
+        reviewed = {row.get("clusterId") for row in review
+                    if type(row) is dict and set(row) == review_fields
+                    and type(row["clusterId"]) is str
+                    and row["disposition"] in ("planned", "not-applicable", "deferred")
+                    and type(row["reason"]) is str and row["reason"].strip()
+                    and all(type(row[k]) is list for k in ("companyKeys", "industryKeys", "eventKeys"))
+                    } if type(review) is list else set()
+        missing = [row for row in clusters if type(row) is dict and row.get("clusterId") not in reviewed]
+        entity_plan = candidate.get("entityPlan")
+        if (type(entity_plan) is not dict or set(entity_plan) != {"industries", "companies", "events"}
+                or type(review) is not list or missing):
+            return {"status": "needs-review", "clustersToReview": missing or clusters,
+                    "requiredEntityPlanRoles": ["industries", "companies", "events"],
+                    "nextAction": "Return entityPlan and one justified entityReview decision per cluster, then call prepare-report again. Do not write the Report yet. No-change is allowed after review."}
+    registry = Registry.from_mapping(value["registry"])
+    boundary = value["window"]
+    if type(boundary) is not dict or set(boundary) != {"start", "end"}:
+        raise ValueError("invalid window")
+    window = Window(*(datetime.fromisoformat(boundary[k].replace("Z", "+00:00")) for k in ("start", "end")))
+    payload = report_page(registry, window, validation, value["relations"])
+    return {"status": "ready", "request": payload}
 
 
 def story_page(
@@ -297,7 +340,7 @@ def _story_properties(fields: dict[str, object]) -> dict[str, object]:
 def _story_change_relations(value: object) -> dict[str, list[str]]:
     if not isinstance(value, Mapping):
         raise ValueError("relation_ids must be a mapping of confirmed page IDs")
-    allowed = {"primaryStory", "relatedStory", "report", "collection"}
+    allowed = {"primaryStory", "relatedStory", "report", "collection", "events"}
     if any(type(key) is not str for key in value) or not set(value).issubset(allowed):
         raise ValueError("relation_ids contains an unsupported relation")
     if "primaryStory" not in value:
@@ -308,6 +351,7 @@ def _story_change_relations(value: object) -> dict[str, list[str]]:
         "relatedStory": "Related Story",
         "report": "Related Report",
         "collection": "Related Collection",
+        "events": "Events",
     }
     properties: dict[str, list[str]] = {}
     for relation_name, property_name in property_names.items():
@@ -426,6 +470,30 @@ def _validated_report(value: object) -> dict[str, object]:
     return value["report"]
 
 
+def append_relations(page_id: str, existing_relations: object, confirmed_relations: object):
+    """Build one preserving relation patch, or None when all links already exist.
+
+    Inputs are complete current property projections and caller-confirmed IDs.
+    A missing projection is not evidence of an empty relation. No external I/O.
+    """
+    page_id = normalize_uuid(page_id, "page_id")
+    allowed = {"Stories", "Companies", "Industries", "Events"}
+    if (not isinstance(existing_relations, Mapping) or
+        not isinstance(confirmed_relations, Mapping) or
+        not set(existing_relations).issubset(allowed) or
+        not set(confirmed_relations).issubset(set(existing_relations))):
+        raise ValueError("unsupported or missing relation projection")
+    properties = {}
+    for name, additions in confirmed_relations.items():
+        previous = _relation_ids(existing_relations[name], name)
+        merged = list(dict.fromkeys(previous + _relation_ids(additions, name)))
+        if merged != previous:
+            properties[name] = merged
+    if not properties:
+        return None
+    return {"page_id": page_id, "command": "update_properties", "properties": properties}
+
+
 def _report_relations(value: object) -> dict[str, list[str]]:
     if isinstance(value, Mapping):
         pairs = tuple(value.items())
@@ -435,7 +503,9 @@ def _report_relations(value: object) -> dict[str, list[str]]:
         try:
             pairs = tuple(value)
         except TypeError as exc:
-            raise ValueError("relations must be a mapping or iterable of pairs") from exc
+            raise ValueError(
+                "relations must be a mapping or iterable of pairs"
+            ) from exc
 
     properties: dict[str, list[str]] = {}
     for pair in pairs:
@@ -479,7 +549,11 @@ def _date_properties(property_name: str, value: datetime) -> dict[str, object]:
 
 
 def _utc_iso(value: object) -> str:
-    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+    if (
+        not isinstance(value, datetime)
+        or value.tzinfo is None
+        or value.utcoffset() is None
+    ):
         raise ValueError("date value must be a timezone-aware datetime")
     return value.astimezone(_UTC).isoformat().replace("+00:00", "Z")
 
@@ -494,7 +568,9 @@ def _window_label(window: Window) -> str:
 
 def _markdown_inline(value: object) -> str:
     text = _plain_text(value)
-    return "".join(f"\\{char}" if char in _MARKDOWN_INLINE_CONTROLS else char for char in text)
+    return "".join(
+        f"\\{char}" if char in _MARKDOWN_INLINE_CONTROLS else char for char in text
+    )
 
 
 def _rendered_article_link(value: object) -> str:

@@ -21,12 +21,14 @@ PACKAGE = ROOT / "world-memory-autopilot"
 
 def _independent_installable_paths(package: Path) -> tuple[Path, ...]:
     paths = [package / "SKILL.md", package / "VERSION", package / "requirements.txt"]
-    for root in ("agents", "assets", "references", "scripts/world_memory"):
+    for root in ("agents", "assets", "references", "scripts"):
         paths.extend(
             path
             for path in (package / root).rglob("*")
             if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
         )
+    paths.extend(package / "tests" / name for name in
+                 ("test_financialjuice_feed.py", "test_required_entity_completion.py"))
     return tuple(sorted(paths))
 
 
@@ -42,11 +44,11 @@ class ReleaseBuilderContractTests(unittest.TestCase):
             output = root / "release.zip"
             receipt = build_release(PACKAGE, output)
             expected = [path.relative_to(PACKAGE).as_posix() for path in _independent_installable_paths(PACKAGE)]
-            self.assertEqual(len(expected), 29)
-            self.assertEqual(receipt["version"], "0.17.1")
+            self.assertEqual(len(expected), 40)
+            self.assertEqual(receipt["version"], "0.24.1")
             self.assertEqual(receipt["topLevel"], ["world-memory-autopilot"])
             self.assertEqual(receipt["entries"], [f"world-memory-autopilot/{path}" for path in expected])
-            self.assertEqual(len(receipt["entries"]), 29)
+            self.assertEqual(len(receipt["entries"]), 40)
             self.assertIn(
                 "world-memory-autopilot/scripts/world_memory/discovery.py",
                 receipt["entries"],
@@ -90,9 +92,9 @@ class ReleaseBuilderContractTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stderr, "")
             receipt = json.loads(result.stdout)
-            output = root / "world-memory-autopilot-v0.17.1.zip"
+            output = root / "world-memory-autopilot-v0.24.1.zip"
             self.assertTrue(output.is_file())
-            self.assertEqual(receipt["version"], "0.17.1")
+            self.assertEqual(receipt["version"], "0.24.1")
             self.assertEqual(receipt["size"], output.stat().st_size)
 
     def test_excludes_local_tests_runtime_captures_credentials_and_design_documents(self) -> None:
@@ -118,7 +120,7 @@ class ReleaseBuilderContractTests(unittest.TestCase):
             output = root / "release.zip"
             receipt = build_release(package, output)
 
-            self.assertEqual(len(receipt["entries"]), 29)
+            self.assertEqual(len(receipt["entries"]), 40)
             self.assertIn(
                 "world-memory-autopilot/scripts/world_memory/plugin_market.py",
                 receipt["entries"],
@@ -126,7 +128,7 @@ class ReleaseBuilderContractTests(unittest.TestCase):
             forbidden_fragments = (
                 "AGENTS.md",
                 "credentials",
-                "/tests/",
+                "/tests/test_local_only.py",
                 "raw-plugin-capture",
                 "normalizer-fixture",
                 "__pycache__",
@@ -153,7 +155,7 @@ class ReleaseBuilderContractTests(unittest.TestCase):
     def test_success_keeps_only_the_target_versioned_sibling_archive(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            target = root / "world-memory-autopilot-v0.17.1.zip"
+            target = root / "world-memory-autopilot-v0.24.1.zip"
             legacy = (
                 root / "world-memory-autopilot-v0.11.0.zip",
                 root / "world-memory-autopilot-v0.12.1.zip",
@@ -184,7 +186,7 @@ class ReleaseBuilderContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             package = self._copy_package(root)
-            target = root / "world-memory-autopilot-v0.17.1.zip"
+            target = root / "world-memory-autopilot-v0.24.1.zip"
             target.write_bytes(b"known-current")
             legacy = root / "world-memory-autopilot-v0.12.1.zip"
             legacy.write_bytes(b"known-legacy")
@@ -200,7 +202,7 @@ class ReleaseBuilderContractTests(unittest.TestCase):
     def test_failed_post_write_verification_preserves_artifacts_and_removes_temp(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            target = root / "world-memory-autopilot-v0.17.1.zip"
+            target = root / "world-memory-autopilot-v0.24.1.zip"
             legacy = root / "world-memory-autopilot-v0.12.1.zip"
             target.write_bytes(b"known-current")
             legacy.write_bytes(b"known-legacy")
@@ -243,7 +245,7 @@ class ReleaseBuilderContractTests(unittest.TestCase):
             ("secret", lambda package: (package / "references" / "deployment.md").write_text((package / "references" / "deployment.md").read_text() + "\nBearer " + "a" * 24)),
             ("uuid", lambda package: (package / "references" / "deployment.md").write_text((package / "references" / "deployment.md").read_text() + "\n12345678-1234-4123-8123-123456789abc")),
             ("legacy", lambda package: (package / "references" / "deployment.md").write_text((package / "references" / "deployment.md").read_text() + "\nprecommit postcommit 0.10.x")),
-            ("version", lambda package: (package / "SKILL.md").write_text((package / "SKILL.md").read_text().replace("`0.17.1`", "`0.14.7`"))),
+            ("version", lambda package: (package / "SKILL.md").write_text((package / "SKILL.md").read_text().replace("`0.24.1`", "`0.14.7`"))),
             ("missing", lambda package: (package / "requirements.txt").unlink()),
         )
         for name, mutate in cases:

@@ -1,12 +1,14 @@
-"""Declarative, capability-specific provider ordering for market observations.
-
-The Workspace Agent owns every connector call.  This module only turns the
-caller-supplied current connector access into an ordered, side-effect-free
-plan, so an unavailable optional connector is absent rather than represented
-as an attempted provider failure.
-"""
+"""Validate and combine evidence-bound market observations. Routing lives in market_plan."""
 
 from __future__ import annotations
+
+from .market_plan import (
+    TOOL_ACCESS_KEYS as TOOL_ACCESS_KEYS,
+    TRADINGVIEW_ACCESS_KEYS as TRADINGVIEW_ACCESS_KEYS,
+    normalize_market_tool_access as normalize_market_tool_access,
+    _SCHEDULED_ECONOMIC_SERIES_IDS,
+    build_plugin_market_plan,
+)
 
 from copy import deepcopy
 from datetime import date, datetime, timezone
@@ -14,64 +16,6 @@ import math
 import re
 from urllib.parse import parse_qsl, urlsplit
 
-
-TOOL_ACCESS_KEYS = (
-    "alpacaMarketData",
-    "alpacaOptions",
-    "alpacaCalendar",
-    "wolframLanguage",
-    "wolframAlpha",
-)
-
-_ROW_RULES = {
-    "successRule": "one-complete-provider-observation",
-    "partialRule": "preserve-usable-components-and-continue",
-    "shortCircuitOnComplete": True,
-}
-
-_VALIDATOR_CAPABILITY = {
-    "equity-current-price": "equity-current-price",
-    "equity-latest-quote": None,
-    "equity-daily-bars": "equity-daily-bars",
-    "credit-risk-pair": "equity-pair-series",
-    "market-breadth-pair": "equity-pair-series",
-    "options-chain": None,
-    "corporate-actions": None,
-    "market-calendar": None,
-    "btc-usd": None,
-    "treasury-yield-curve": "treasury-yield-curve",
-    "economic-time-series": "economic-time-series",
-    "volatility-term-structure": "volatility-term-structure",
-}
-
-_CAPABILITY_FALLBACKS = {
-    "equity-current-price": ("existing-equity",),
-    "equity-latest-quote": ("existing-equity",),
-    "equity-daily-bars": ("existing-equity",),
-    "credit-risk-pair": ("existing-credit-risk",),
-    "market-breadth-pair": ("existing-market-breadth",),
-    "options-chain": (),
-    "corporate-actions": ("existing-corporate-actions",),
-    "market-calendar": ("existing-market-calendar",),
-    "btc-usd": (),
-    "treasury-yield-curve": ("treasury-csv", "treasury-xml"),
-    "economic-time-series": ("fred-batch", "fred-page"),
-    "volatility-term-structure": ("cboe", "spreadsheet"),
-}
-
-_ALPACA_MARKET_CAPABILITIES = frozenset(
-    {
-        "equity-current-price",
-        "equity-latest-quote",
-        "equity-daily-bars",
-        "credit-risk-pair",
-        "market-breadth-pair",
-        "corporate-actions",
-        "btc-usd",
-    }
-)
-_ALPACA_OPTIONS_CAPABILITIES = frozenset({"options-chain"})
-_ALPACA_CALENDAR_CAPABILITIES = frozenset({"market-calendar"})
 
 SAFE_ERROR_CODES = frozenset(
     {
@@ -101,6 +45,7 @@ SAFE_PROVIDER_RESULT_ERRORS = SAFE_ERROR_CODES | frozenset(
 
 _PROVIDERS = frozenset(
     {
+        "tradingview",
         "alpaca",
         "wolfram-language",
         "wolfram-alpha",
@@ -165,6 +110,7 @@ _VALUE_BASES = {
             "iex-trade-derived-bar",
             "sip-trade-derived-bar",
             "wolfram-daily-ohlcv",
+            "split-adjusted-close",
         }
     ),
     "equity-pair-series": frozenset(
@@ -173,18 +119,32 @@ _VALUE_BASES = {
             "iex-trade-derived-bar",
             "sip-trade-derived-bar",
             "wolfram-daily-close",
+            "split-adjusted-close",
         }
     ),
 }
 _EQUITY_PROVIDERS_BY_CAPABILITY = {
     "equity-current-price": frozenset(
-        {"alpaca", "wolfram-language", "wolfram-alpha", "existing-equity"}
+        {
+            "tradingview",
+            "alpaca",
+            "wolfram-language",
+            "wolfram-alpha",
+            "existing-equity",
+        }
     ),
     "equity-daily-bars": frozenset(
-        {"alpaca", "wolfram-language", "wolfram-alpha", "existing-equity"}
+        {
+            "tradingview",
+            "alpaca",
+            "wolfram-language",
+            "wolfram-alpha",
+            "existing-equity",
+        }
     ),
     "equity-pair-series": frozenset(
         {
+            "tradingview",
             "alpaca",
             "wolfram-language",
             "wolfram-alpha",
@@ -194,9 +154,7 @@ _EQUITY_PROVIDERS_BY_CAPABILITY = {
     ),
 }
 _MARKET_SCOPES = frozenset({"iex", "sip", "provider-market", "unknown"})
-_SESSIONS = frozenset(
-    {"regular", "pre-market", "after-hours", "closed", "unknown"}
-)
+_SESSIONS = frozenset({"regular", "pre-market", "after-hours", "closed", "unknown"})
 
 _COMMON_CANDIDATE_FIELDS = frozenset(
     {
@@ -251,9 +209,7 @@ _CAPABILITY_REQUEST_FIELDS = {
             "minimumCommonDays",
         }
     ),
-    "treasury-yield-curve": frozenset(
-        {"capability", "cutoff", "country", "date"}
-    ),
+    "treasury-yield-curve": frozenset({"capability", "cutoff", "country", "date"}),
     "economic-time-series": frozenset(
         {
             "capability",
@@ -269,9 +225,7 @@ _CAPABILITY_REQUEST_FIELDS = {
     ),
     "volatility-term-structure": frozenset({"capability", "cutoff", "date"}),
 }
-_REQUEST_INSTRUMENT_FIELDS = frozenset(
-    {"symbol", "currency", "region", "assetClass"}
-)
+_REQUEST_INSTRUMENT_FIELDS = frozenset({"symbol", "currency", "region", "assetClass"})
 _CANDIDATE_INSTRUMENT_FIELDS = frozenset(
     {"symbol", "currency", "region", "assetClass", "exchange"}
 )
@@ -279,13 +233,6 @@ _TREASURY_MATURITIES = frozenset({"3M", "1Y", "2Y", "5Y", "10Y", "30Y"})
 _TREASURY_COMPLETE_MATURITIES = ("2Y", "5Y", "10Y", "30Y")
 _VIX_COMPONENTS = frozenset({"VIX9D", "VIX", "VIX3M", "VIX6M"})
 _VIX_COMPONENT_ORDER = ("VIX9D", "VIX", "VIX3M", "VIX6M")
-_SCHEDULED_ECONOMIC_SERIES_IDS = (
-    "FRED:NFCIRISK",
-    "FRED:WALCL",
-    "FRED:WDTGAL",
-    "FRED:RRPONTSYD",
-    "FRED:DTWEXBGS",
-)
 _IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg")
 _REPAIR_ELIGIBLE_ERROR_CODES = frozenset(
     {
@@ -296,119 +243,12 @@ _REPAIR_ELIGIBLE_ERROR_CODES = frozenset(
     }
 )
 _QUERY_TOOL_PROVIDERS = {
+    "TradingView MCP": "tradingview",
     "Wolfram Language": "wolfram-language",
     "Wolfram Alpha": "wolfram-alpha",
 }
 _PATH_MISSING = object()
 _USD_NOMINAL_EQUIVALENTS = frozenset({"USD", "USDT", "USDC"})
-
-_INVOCATION_ARGUMENTS = {
-    "equity-current-price": ("instrument.symbol", "maximumAgeSeconds", "cutoff"),
-    "equity-latest-quote": ("instrument.symbol", "cutoff"),
-    "equity-daily-bars": ("instrument.symbol", "startDate", "endDate", "cutoff"),
-    "credit-risk-pair": ("instruments[].symbol", "startDate", "endDate", "cutoff"),
-    "market-breadth-pair": ("instruments[].symbol", "startDate", "endDate", "cutoff"),
-    "options-chain": ("instrument.symbol", "cutoff"),
-    "corporate-actions": ("instrument.symbol", "startDate", "endDate"),
-    "market-calendar": ("startDate", "endDate"),
-    "btc-usd": ("instrument.symbol", "startDate", "endDate"),
-    "treasury-yield-curve": ("country", "date"),
-    "economic-time-series": ("seriesId", "startDate", "endDate"),
-    "volatility-term-structure": ("date", "plan.vixSymbols"),
-}
-
-_ALPACA_ACTIONS = {
-    "equity-current-price": "get_stock_latest_trade",
-    "equity-latest-quote": "get_stock_latest_quote",
-    "equity-daily-bars": "get_stock_bars",
-    "credit-risk-pair": "get_stock_bars_for_each_symbol",
-    "market-breadth-pair": "get_stock_bars_for_each_symbol",
-    "options-chain": "get_option_chain",
-    "corporate-actions": "get_corporate_actions",
-    "market-calendar": "get_market_calendar",
-    "btc-usd": "get_crypto_bars",
-}
-
-_PUBLIC_HTTP_INVOCATIONS = {
-    "existing-equity": (
-        "get_yahoo_chart",
-        "https://query1.finance.yahoo.com/v8/finance/chart/{instrument.symbol}",
-    ),
-    "existing-credit-risk": (
-        "get_yahoo_chart_for_each_symbol",
-        "https://query1.finance.yahoo.com/v8/finance/chart/{instruments[].symbol}",
-    ),
-    "existing-market-breadth": (
-        "get_yahoo_chart_for_each_symbol",
-        "https://query1.finance.yahoo.com/v8/finance/chart/{instruments[].symbol}",
-    ),
-    "existing-corporate-actions": (
-        "get_yahoo_chart_corporate_actions",
-        "https://query1.finance.yahoo.com/v8/finance/chart/{instrument.symbol}",
-    ),
-    "existing-market-calendar": (
-        "get_nasdaq_market_calendar",
-        "https://api.nasdaq.com/api/calendar",
-    ),
-    "treasury-csv": (
-        "get_treasury_daily_par_yield_csv",
-        "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/{date.year}/all",
-    ),
-    "treasury-xml": (
-        "get_treasury_daily_par_yield_xml",
-        "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml",
-    ),
-    "fred-batch": (
-        "get_fred_graph_csv_for_series",
-        "https://fred.stlouisfed.org/graph/fredgraph.csv?id={seriesIdWithoutPrefix}",
-    ),
-    "fred-page": (
-        "get_fred_series_page",
-        "https://fred.stlouisfed.org/series/{seriesIdWithoutPrefix}",
-    ),
-    "google-finance": (
-        "open_quote_and_parse_quote_for_each_symbol",
-        "https://www.google.com/finance/quote/{plan.vixSymbols[]}:INDEXCBOE",
-    ),
-    "spreadsheet": ("get_registered_vix_csv", "plan.vixPublicCsvUrl"),
-    "cboe": (
-        "get_cboe_history_csv_for_each_symbol",
-        "https://cdn.cboe.com/api/global/us_indices/daily_prices/{plan.vixSymbols[]}_History.csv",
-    ),
-}
-
-
-def normalize_market_tool_access(value: object) -> dict[str, bool]:
-    """Require the exact, boolean-only connector-access contract."""
-    if type(value) is not dict or set(value) != set(TOOL_ACCESS_KEYS):
-        raise ValueError("market tool access keys do not match")
-    if any(type(value[key]) is not bool for key in TOOL_ACCESS_KEYS):
-        raise ValueError("market tool access must use booleans")
-    return {key: value[key] for key in TOOL_ACCESS_KEYS}
-
-
-def build_plugin_market_plan(
-    *,
-    tool_access: object,
-    vix_public_csv_url: str,
-    vix_symbols: tuple[str, ...],
-) -> dict[str, object]:
-    """Describe ordered, caller-owned market-provider attempts without I/O."""
-    access = normalize_market_tool_access(tool_access)
-    _validate_vix_source(vix_public_csv_url, vix_symbols)
-    return {
-        "planVersion": "1.0",
-        "mode": "caller-supplied-observations",
-        "externalIo": False,
-        "failurePolicy": "preserve-independent-successes",
-        "toolAccess": dict(access),
-        "vixPublicCsvUrl": vix_public_csv_url,
-        "vixSymbols": list(vix_symbols),
-        "capabilities": {
-            capability: _capability_row(capability, access, vix_public_csv_url)
-            for capability in _CAPABILITY_FALLBACKS
-        },
-    }
 
 
 def collect_planned_market_observations(
@@ -656,9 +496,8 @@ def _validate_normalized_observation(
         raise ValueError("normalized observation must be an object")
     capability = request["capability"]
     expected_fields = (
-        (_COMMON_CANDIDATE_FIELDS - {"evidenceBindings"})
-        | _CAPABILITY_CANDIDATE_FIELDS[capability]
-    )
+        _COMMON_CANDIDATE_FIELDS - {"evidenceBindings"}
+    ) | _CAPABILITY_CANDIDATE_FIELDS[capability]
     if set(value) != expected_fields:
         raise ValueError("normalized observation shape is invalid")
     candidate = deepcopy(value)
@@ -702,7 +541,7 @@ def _valid_source_locator_without_evidence(
 
 
 def _effective_vix_observation(
-    observations: list[dict[str, object]]
+    observations: list[dict[str, object]],
 ) -> dict[str, object]:
     components: dict[str, object] = {}
     for observation in observations:
@@ -830,9 +669,7 @@ def _validate_request(value: object) -> list[dict[str, str]]:
             type(value["maximumAgeSeconds"]) is not int
             or value["maximumAgeSeconds"] < 1
         ):
-            errors.append(
-                _error("provider-malformed", "request.maximumAgeSeconds")
-            )
+            errors.append(_error("provider-malformed", "request.maximumAgeSeconds"))
     elif capability == "equity-pair-series":
         instruments = value["instruments"]
         if (
@@ -841,7 +678,10 @@ def _validate_request(value: object) -> list[dict[str, str]]:
             or any(not _valid_request_instrument(item) for item in instruments)
         ):
             errors.append(_error("provider-malformed", "request.instruments"))
-        if type(value["minimumCommonDays"]) is not int or value["minimumCommonDays"] < 1:
+        if (
+            type(value["minimumCommonDays"]) is not int
+            or value["minimumCommonDays"] < 1
+        ):
             errors.append(_error("provider-malformed", "request.minimumCommonDays"))
     elif capability == "treasury-yield-curve":
         if value["country"] != "US":
@@ -908,6 +748,14 @@ def _validate_candidate_envelope(
         type(candidate["provider"]) is not str
         or candidate["provider"] not in _PROVIDERS
     ):
+        errors.append(_error("provider-malformed", "provider"))
+    if candidate["provider"] == "tradingview" and capability not in {
+        "equity-current-price",
+        "equity-daily-bars",
+        "equity-pair-series",
+        "economic-time-series",
+        "treasury-yield-curve",
+    }:
         errors.append(_error("provider-malformed", "provider"))
     if candidate["completeness"] not in ("complete", "partial"):
         errors.append(_error("provider-malformed", "completeness"))
@@ -1020,12 +868,14 @@ def _safe_provider_url(value: object, provider: object) -> bool:
 
 def _sensitive_url_key(value: str) -> bool:
     compact = re.sub(r"[^a-z0-9]", "", value.casefold())
-    exact = {
-        re.sub(r"[^a-z0-9]", "", key.casefold()) for key in _SENSITIVE_URL_KEYS
-    }
-    return compact == "key" or compact in exact or any(
-        marker in compact
-        for marker in ("credential", "signature", "securitytoken", "accesskey")
+    exact = {re.sub(r"[^a-z0-9]", "", key.casefold()) for key in _SENSITIVE_URL_KEYS}
+    return (
+        compact == "key"
+        or compact in exact
+        or any(
+            marker in compact
+            for marker in ("credential", "signature", "securitytoken", "accesskey")
+        )
     )
 
 
@@ -1109,9 +959,10 @@ def _validate_current_price(
     cutoff = _parse_aware_datetime(request["cutoff"])
     if cutoff is not None and parsed > cutoff:
         errors.append(_error("future-dated", "observedAt"))
-    elif cutoff is not None and (
-        cutoff - parsed
-    ).total_seconds() > request["maximumAgeSeconds"]:
+    elif (
+        cutoff is not None
+        and (cutoff - parsed).total_seconds() > request["maximumAgeSeconds"]
+    ):
         errors.append(_error("stale", "observedAt"))
     return errors
 
@@ -1297,9 +1148,7 @@ def _validate_economic_series(
     return errors
 
 
-def _market_provenance_errors(
-    candidate: dict[str, object]
-) -> list[dict[str, str]]:
+def _market_provenance_errors(candidate: dict[str, object]) -> list[dict[str, str]]:
     errors: list[dict[str, str]] = []
     market_scope = candidate["marketScope"]
     session = candidate["session"]
@@ -1319,6 +1168,16 @@ def _market_provenance_errors(
     }:
         errors.append(_error("provider-malformed", "marketScope"))
     value_basis = candidate.get("valueBasis")
+    if provider == "tradingview":
+        expected_basis = (
+            "last" if capability == "equity-current-price" else "split-adjusted-close"
+        )
+        if value_basis != expected_basis:
+            errors.append(_error("unsupported-value-basis", "valueBasis"))
+        if market_scope != "provider-market":
+            errors.append(_error("provider-malformed", "marketScope"))
+        if capability != "equity-current-price" and session != "regular":
+            errors.append(_error("provider-malformed", "session"))
     if capability == "equity-current-price":
         if provider == "alpaca" and value_basis != "last-trade":
             errors.append(_error("unsupported-value-basis", "valueBasis"))
@@ -1336,9 +1195,7 @@ def _market_provenance_errors(
         }:
             errors.append(_error("unsupported-value-basis", "valueBasis"))
         if provider == "alpaca":
-            expected_scope = (
-                "iex" if value_basis == "iex-trade-derived-bar" else "sip"
-            )
+            expected_scope = "iex" if value_basis == "iex-trade-derived-bar" else "sip"
             if market_scope != expected_scope:
                 errors.append(_error("provider-malformed", "marketScope"))
         if provider in {
@@ -1460,10 +1317,14 @@ def _scalar_leaves(value: object, path: str):
 
 
 def _valid_field_path(value: object) -> bool:
-    return type(value) is str and re.fullmatch(
-        r"[A-Za-z][A-Za-z0-9]*(?:\.(?:[A-Za-z0-9][A-Za-z0-9-]*|\d+))*",
-        value,
-    ) is not None
+    return (
+        type(value) is str
+        and re.fullmatch(
+            r"[A-Za-z][A-Za-z0-9]*(?:\.(?:[A-Za-z0-9][A-Za-z0-9-]*|\d+))*",
+            value,
+        )
+        is not None
+    )
 
 
 def _value_at_field_path(value: object, path: object) -> object:
@@ -1518,9 +1379,7 @@ def _text_contains_exact_scalar(
 ) -> bool:
     if type(expected) in (int, float):
         rendered = str(expected)
-        return re.search(
-            rf"(?<![\w.]){re.escape(rendered)}(?![\w.])", text
-        ) is not None
+        return re.search(rf"(?<![\w.]){re.escape(rendered)}(?![\w.])", text) is not None
     if type(expected) is not str:
         return False
     accepted = (
@@ -1529,9 +1388,7 @@ def _text_contains_exact_scalar(
         else (expected,)
     )
     return any(
-        re.search(
-            rf"(?<![A-Za-z0-9]){re.escape(value)}(?![A-Za-z0-9])", text
-        )
+        re.search(rf"(?<![A-Za-z0-9]){re.escape(value)}(?![A-Za-z0-9])", text)
         is not None
         for value in accepted
     )
@@ -1580,9 +1437,7 @@ def _valid_request_instrument(value: object) -> bool:
     )
 
 
-def _instrument_errors(
-    expected: object, actual: object
-) -> list[dict[str, str]]:
+def _instrument_errors(expected: object, actual: object) -> list[dict[str, str]]:
     if (
         type(expected) is not dict
         or type(actual) is not dict
@@ -1656,11 +1511,16 @@ def _safe_candidate_field(field: str) -> str:
 
 def _safe_evidence_path(path: str) -> str:
     allowed = {"fetchedAt"}
-    prefixes = tuple(f"{field}." for field in frozenset().union(
-        *_CAPABILITY_CANDIDATE_FIELDS.values()
-    ))
+    prefixes = tuple(
+        f"{field}."
+        for field in frozenset().union(*_CAPABILITY_CANDIDATE_FIELDS.values())
+    )
     roots = frozenset().union(*_CAPABILITY_CANDIDATE_FIELDS.values())
-    return path if path in allowed or path in roots or path.startswith(prefixes) else "candidate"
+    return (
+        path
+        if path in allowed or path in roots or path.startswith(prefixes)
+        else "candidate"
+    )
 
 
 def _error(code: str, field: str) -> dict[str, str]:
@@ -1710,111 +1570,3 @@ def _is_wolfram_alpha_text_candidate(
         and evidence[0].get("format") == "text"
         and _text_evidence_contains_candidate_scalars(candidate, evidence)
     )
-
-
-def _capability_row(
-    capability: str, access: dict[str, bool], vix_public_csv_url: str
-) -> dict[str, object]:
-    providers: list[str] = []
-    if capability == "volatility-term-structure":
-        providers.append("google-finance")
-    if access["alpacaMarketData"] and capability in _ALPACA_MARKET_CAPABILITIES:
-        providers.append("alpaca")
-    if access["alpacaOptions"] and capability in _ALPACA_OPTIONS_CAPABILITIES:
-        providers.append("alpaca")
-    if access["alpacaCalendar"] and capability in _ALPACA_CALENDAR_CAPABILITIES:
-        providers.append("alpaca")
-    if access["wolframLanguage"]:
-        providers.append("wolfram-language")
-    if access["wolframAlpha"]:
-        providers.append("wolfram-alpha")
-    providers.extend(_CAPABILITY_FALLBACKS[capability])
-    validator_capability = _VALIDATOR_CAPABILITY[capability]
-    row = {
-        "providers": providers,
-        "attempts": [
-            _provider_attempt(capability, provider, vix_public_csv_url)
-            for provider in providers
-        ],
-        "validatorSupported": validator_capability is not None,
-        "validatorCapability": validator_capability,
-        "scheduleEligible": validator_capability is not None,
-        **_ROW_RULES,
-    }
-    if capability == "economic-time-series":
-        row["scheduledSeriesIds"] = list(_SCHEDULED_ECONOMIC_SERIES_IDS)
-    return row
-
-
-def _provider_attempt(
-    capability: str, provider: str, vix_public_csv_url: str
-) -> dict[str, object]:
-    access_key: str | None = None
-    kind = "public-http"
-    tool = "HTTP"
-    action: str
-    method: str | None = "GET"
-    endpoint_template: str | None
-    evidence_format = "structured"
-    source_locator_persistence = "url"
-    if provider == "alpaca":
-        if capability == "options-chain":
-            access_key = "alpacaOptions"
-        elif capability == "market-calendar":
-            access_key = "alpacaCalendar"
-        else:
-            access_key = "alpacaMarketData"
-        kind = "connector-tool"
-        tool = "Alpaca"
-        action = _ALPACA_ACTIONS[capability]
-        method = None
-        endpoint_template = None
-    elif provider == "wolfram-language":
-        access_key = "wolframLanguage"
-        kind = "connector-tool"
-        tool = "Wolfram Language"
-        action = "evaluate"
-        method = None
-        endpoint_template = None
-        source_locator_persistence = "provider-query"
-    elif provider == "wolfram-alpha":
-        access_key = "wolframAlpha"
-        kind = "connector-tool"
-        tool = "Wolfram Alpha"
-        action = "query"
-        method = None
-        endpoint_template = None
-        evidence_format = "text"
-        source_locator_persistence = "provider-query"
-    else:
-        action, endpoint_template = _PUBLIC_HTTP_INVOCATIONS[provider]
-        if provider == "google-finance":
-            tool = "web.open + world_memory.google_finance.parse_quote"
-        if provider == "spreadsheet":
-            endpoint_template = vix_public_csv_url
-    return {
-        "provider": provider,
-        "requiredToolAccess": access_key,
-        "invocation": {
-            "kind": kind,
-            "tool": tool,
-            "action": action,
-            "method": method,
-            "endpointTemplate": endpoint_template,
-            "requestArguments": list(_INVOCATION_ARGUMENTS[capability]),
-            "evidenceFormat": evidence_format,
-            "rawQueryPersistence": "forbidden",
-            "sourceLocatorPersistence": source_locator_persistence,
-        },
-    }
-
-
-def _validate_vix_source(
-    vix_public_csv_url: str, vix_symbols: tuple[str, ...]
-) -> None:
-    if type(vix_public_csv_url) is not str or not vix_public_csv_url:
-        raise ValueError("vix public CSV URL must be a nonempty string")
-    if type(vix_symbols) is not tuple or not vix_symbols:
-        raise ValueError("vix symbols must be a nonempty tuple")
-    if any(type(symbol) is not str or not symbol for symbol in vix_symbols):
-        raise ValueError("vix symbols must be nonempty strings")

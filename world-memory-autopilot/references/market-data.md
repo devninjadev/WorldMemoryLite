@@ -1,5 +1,7 @@
 # Market data
 
+For TradingView routing, access, quote/history semantics and explicit VIX exclusion, read [tradingview-prices.md](tradingview-prices.md).
+
 Treat every provider as an independent observation. Market data enriches the news evidence; no single provider is an authority gate for the Report.
 
 ## Deterministic CLI
@@ -14,13 +16,13 @@ Treat every provider as an independent observation. Market data enriches the new
 
 | Value | Closed shape |
 |---|---|
-| market-data-plan | exact keys registry,toolAccess; registry is the validated notion-native-v2 object and toolAccess is the current response |
-| market-data-plan.toolAccess | exact boolean keys alpacaMarketData,alpacaOptions,alpacaCalendar,wolframLanguage,wolframAlpha; each value reflects current tool access rather than remembered availability |
+| market-data-plan | exact keys registry,toolAccess; registry is the validated notion-native-v2 object and toolAccess is the current response (legacy five or current seven flags) |
+| market-data-plan.toolAccess | legacy five boolean keys alpacaMarketData,alpacaOptions,alpacaCalendar,wolframLanguage,wolframAlpha, or those plus both tradingViewQuotes,tradingViewHistory; each value reflects current tool access rather than remembered availability |
 | market-data-plan.attempts[] | exact keys provider,requiredToolAccess,invocation; invocation has exact keys kind,tool,action,method,endpointTemplate,requestArguments,evidenceFormat,rawQueryPersistence,sourceLocatorPersistence and is directly executable without inferring an operation from provider |
 | validate-market-observation | exact keys request,candidate,evidence,normalizationAttempt; normalizationAttempt is 1 or 2 |
 | request | one of the six exact capability shapes below; cutoff is aware; current price also has maximumAgeSeconds; date windows satisfy startDate<=endDate<=cutoff; instruments use exact keys symbol,currency,region,assetClass |
 | candidate common | exact keys schemaVersion,capability,provider,sourceLocator,fetchedAt,completeness,evidenceBindings plus only the capability fields below; provider is a closed plan provider; schemaVersion is 1.0; completeness is complete or partial |
-| sourceLocator | either exact keys kind,url with kind=url and evidence-bound provider-host URL without credentials, key/token/credential/signature/access-key/security-token query keys including signed vendor prefixes, or fragment; or exact keys kind,tool,queryDescriptor with kind=provider-query and matching Wolfram provider |
+| sourceLocator | either exact keys kind,url with kind=url and evidence-bound provider-host URL without credentials, key/token/credential/signature/access-key/security-token query keys including signed vendor prefixes, or fragment; or exact keys kind,tool,queryDescriptor with kind=provider-query and matching Wolfram or TradingView provider |
 | evidenceBindings[] | structured evidence uses exact keys field,evidenceId,evidencePath with the same exact scalar field path; text evidence uses exact keys field,evidenceId,textSpan,excerpt with an exact field-level source span |
 | evidence[] | exact keys evidenceId,format,content; format is structured or text; content is the corresponding tool result bound only to that evidenceId |
 | collect-market-data | exact keys plan,outcomes; plan is the unchanged current market-data-plan response and outcomes is a nonempty list of complete planned chains |
@@ -28,18 +30,18 @@ Treat every provider as an independent observation. Market data enriches the new
 | collect-market-data.attempts[] | exact keys provider,status,values,error,stage,validationEnvelope; complete forces every later row to not-attempted; partial or error permits the next attempt; ok or partial contains exactly one normalized observation at stableKey and the original accepted validation envelope; error or not-attempted uses validationEnvelope null |
 | values.<stableKey> | atomic capabilities use one complete fallback observation instead of mixing a partial; VIX uses missing-only components with provider,sourceLocator,date,fetchedAt provenance per component; never a scalar or flattened pseudo-curve |
 
-`market-data-plan` accepts exactly `{registry,toolAccess}`. It validates the complete `notion-native-v2` registry and the five current boolean access flags, performs no connector I/O, and returns an ordered provider chain per capability. Do not infer connector installation from old runs or documentation: the Workspace Agent supplies the current tool-access response on every run, and an unavailable optional connector is absent from the plan rather than reported as an attempted failure.
+`market-data-plan` accepts exactly `{registry,toolAccess}`. It validates the complete `notion-native-v2` registry and the current boolean access flags (legacy five or current seven), performs no connector I/O, and returns an ordered provider chain per capability. Do not infer connector installation from old runs or documentation: the Workspace Agent supplies the current tool-access response on every run, and an unavailable optional connector is absent from the plan rather than reported as an attempted failure.
 
-The scheduled prompt renders the exact Task 1 wrapper as valid JSON inside `market_data_plan_request_template`: `registry` is the actual validated embedded registry object and `toolAccess` has exactly the five declared keys with `null` values. Parse that block, replace each `null` only with its corresponding current observed boolean, and call `market-data-plan` with the same object. Do not reconstruct the registry, add a key, or change any other value. Each capability row carries executable `attempts`, `validatorSupported`, `validatorCapability`, `scheduleEligible`, `successRule:one-complete-provider-observation`, `partialRule:preserve-usable-components-and-continue`, and `shortCircuitOnComplete:true`. Every attempt identifies its provider, required current tool-access key or `null`, and a closed invocation descriptor. Connector attempts name the exact tool action and request fields; public attempts name HTTP `GET`, an exact official/public endpoint template, and request fields. The descriptor also declares structured versus text evidence and whether accepted provenance is a public URL or a deterministic provider-query descriptor. No provider-label inference is permitted. The raw tool query is invocation-local and forbidden from persistence; the validated deterministic `sourceLocator.queryDescriptor` is the only query representation that may accompany an accepted Wolfram observation. Call only listed providers and preserve their exact order. Independent capability chains may run concurrently. Provider attempts inside one capability chain are sequential and conditional; never start fallback N+1 before fallback N has failed validation or returned an accepted partial result with still-missing fields.
+Read registry and marketToolAccess from the scheduled configuration. Validate the registry once, replace access nulls with current observed booleans, and pass `{registry,toolAccess}` to `market-data-plan`. Legacy five-flag inputs remain valid; current schedules use seven flags. Each capability row carries executable `attempts`, `validatorSupported`, `validatorCapability`, `scheduleEligible`, `successRule:one-complete-provider-observation`, `partialRule:preserve-usable-components-and-continue`, and `shortCircuitOnComplete:true`. Every attempt identifies its provider, required current tool-access key or `null`, and a closed invocation descriptor. Connector attempts name the exact tool action and request fields; public attempts name HTTP `GET`, an exact official/public endpoint template, and request fields. The descriptor also declares structured versus text evidence and whether accepted provenance is a public URL or a deterministic provider-query descriptor. No provider-label inference is permitted. The raw tool query is invocation-local and forbidden from persistence; the validated deterministic `sourceLocator.queryDescriptor` is the only query representation that may accompany an accepted Wolfram observation. Call only listed providers and preserve their exact order. Independent capability chains may run concurrently. Provider attempts inside one capability chain are sequential and conditional; never start fallback N+1 before fallback N has failed validation or returned an accepted partial result with still-missing fields.
 
 | Normal scheduled capability | Task 1 plan row | Task 2 validator request | Ordered attempt contract |
 |---|---|---|---|
-| current equity price | equity-current-price | equity-current-price | Alpaca; Wolfram Language; Wolfram Alpha; existing equity fallback |
-| equity daily bars | equity-daily-bars | equity-daily-bars | Alpaca; Wolfram Language; Wolfram Alpha; existing equity fallback |
-| HYG/LQD credit-risk pair | credit-risk-pair | equity-pair-series | Alpaca; Wolfram Language; Wolfram Alpha; existing credit-risk fallback |
-| RSP/SPY breadth pair | market-breadth-pair | equity-pair-series | Alpaca; Wolfram Language; Wolfram Alpha; existing breadth fallback |
-| US Treasury yield curve | treasury-yield-curve | treasury-yield-curve | Wolfram Language; Wolfram Alpha; Treasury CSV; Treasury XML |
-| FRED economic time series | economic-time-series, once each for FRED:NFCIRISK,FRED:WALCL,FRED:WDTGAL,FRED:RRPONTSYD,FRED:DTWEXBGS | economic-time-series | Wolfram Language; Wolfram Alpha; FRED batch; FRED page |
+| current equity price | equity-current-price | equity-current-price | TradingView when available; Alpaca; Wolfram Language; Wolfram Alpha; existing equity fallback |
+| equity daily bars | equity-daily-bars | equity-daily-bars | TradingView when available; Alpaca; Wolfram Language; Wolfram Alpha; existing equity fallback |
+| HYG/LQD credit-risk pair | credit-risk-pair | equity-pair-series | TradingView when available; Alpaca; Wolfram Language; Wolfram Alpha; existing credit-risk fallback |
+| RSP/SPY breadth pair | market-breadth-pair | equity-pair-series | TradingView when available; Alpaca; Wolfram Language; Wolfram Alpha; existing breadth fallback |
+| US Treasury yield curve | treasury-yield-curve | treasury-yield-curve | TradingView FRED DGS history; Wolfram Language official FRED CSV import; Treasury CSV; Treasury XML |
+| FRED economic time series | economic-time-series, once each for FRED:NFCIRISK,FRED:WALCL,FRED:WDTGAL,FRED:RRPONTSYD,FRED:DTWEXBGS | economic-time-series | TradingView FRED history; Wolfram Language official FRED CSV import; FRED batch; FRED page |
 | VIX term structure | volatility-term-structure | volatility-term-structure | Google Finance web; Wolfram Language; Wolfram Alpha; Cboe; registered public spreadsheet |
 
 The validator supports exactly six capability values: `equity-current-price`, `equity-daily-bars`, `equity-pair-series`, `treasury-yield-curve`, `economic-time-series`, and `volatility-term-structure`. Normal scheduled operation does not request Task 1 rows `equity-latest-quote`, `options-chain`, `corporate-actions`, `market-calendar`, or `btc-usd`. If a separate direct task requests one, do not send that unsupported name to this validator and do not claim validated success. A latest-quote request may degrade to `equity-current-price` only when the observed value is genuinely a current price; its accepted candidate remains `partial` and must be described as current price, never as a quote.
@@ -61,7 +63,7 @@ The validator supports exactly six capability values: `equity-current-price`, `e
 |---|---|
 | common candidate | schemaVersion=1.0; capability equals request; provider is in the closed plan enum; sourceLocator as below; fetchedAt aware and not after cutoff; completeness complete or partial; evidenceBindings list; plus exactly one capability field set |
 | URL sourceLocator | exact keys kind,url; kind=url; provider-host HTTP(S) URL without userinfo, secret query key, or fragment; exact URL occurs in supplied evidence |
-| provider-query sourceLocator | exact keys kind,tool,queryDescriptor; kind=provider-query; tool Wolfram Language maps to provider wolfram-language or Wolfram Alpha maps to wolfram-alpha; descriptor exactly matches one deterministic format below |
+| provider-query sourceLocator | exact keys kind,tool,queryDescriptor; kind=provider-query; tool Wolfram Language maps to provider wolfram-language, Wolfram Alpha maps to wolfram-alpha, or TradingView MCP maps to tradingview; descriptor exactly matches one deterministic format below |
 | evidence[] | nonempty list of exact keys evidenceId,format,content; evidenceId nonempty and unique; structured content is object or list; text content is string |
 | evidenceBindings[] | every non-null capability scalar plus fetchedAt has exactly one binding; structured rows use field,evidenceId,evidencePath with identical field/path and exact typed value; text rows use field,evidenceId,textSpan,excerpt whose exact source slice contains that field value and any maturity,component,or OHLC label; only currency fields treat USD,USDT,USDC as nominal 1:1 equivalents |
 | request instrument | exact keys symbol,currency,region,assetClass; every value nonempty string |
@@ -88,7 +90,7 @@ The validator supports exactly six capability values: `equity-current-price`, `e
 | economic-time-series | `economic-time-series:<seriesId>:<startDate>:<endDate>` or `economic-time-series:<semanticIdentity>:<startDate>:<endDate>` |
 | volatility-term-structure | `volatility-term-structure:<date>` |
 
-Every `instrument` request object has exactly `symbol,currency,region,assetClass`. Each candidate instrument adds exactly `exchange`. A provider-query source locator has exact keys `kind,tool,queryDescriptor`, uses `kind:"provider-query"`, names `Wolfram Language` or `Wolfram Alpha`, and binds to the corresponding provider. A URL source locator has exact keys `kind,url`, uses `kind:"url"`, contains no credentials, sensitive query keys, or fragment, matches the provider host, and appears in supplied evidence. Structured bindings have exact `field,evidenceId,evidencePath`; text bindings have exact `field,evidenceId,textSpan,excerpt`; every evidence row has exact `evidenceId,format,content`.
+Every `instrument` request object has exactly `symbol,currency,region,assetClass`. Each candidate instrument adds exactly `exchange`. A provider-query source locator has exact keys `kind,tool,queryDescriptor`, uses `kind:"provider-query"`, names `Wolfram Language`, `Wolfram Alpha`, or `TradingView MCP`, and binds to the corresponding provider. A URL source locator has exact keys `kind,url`, uses `kind:"url"`, contains no credentials, sensitive query keys, or fragment, matches the provider host, and appears in supplied evidence. Structured bindings have exact `field,evidenceId,evidencePath`; text bindings have exact `field,evidenceId,textSpan,excerpt`; every evidence row has exact `evidenceId,format,content`.
 
 `normalizationAttempt` starts at `1`. Only a validator rejection with `repairAllowed:true` authorizes one repair of the same Wolfram text evidence, sent with `normalizationAttempt:2`. There is no attempt 3, and structured evidence is never LLM-repaired.
 
@@ -201,191 +203,6 @@ Do not invoke the LLM when a provider returns `No Results Found`, a graph-only i
 }
 ```
 
-### Daily bars validator fixture
-
-```json
-{
-  "request": {
-    "capability": "equity-daily-bars",
-    "cutoff": "2026-08-16T12:00:00Z",
-    "instrument": {"symbol": "SPY", "currency": "USD", "region": "US", "assetClass": "ETF"},
-    "startDate": "2026-08-14",
-    "endDate": "2026-08-15"
-  },
-  "candidate": {
-    "schemaVersion": "1.0",
-    "capability": "equity-daily-bars",
-    "provider": "alpaca",
-    "sourceLocator": {"kind": "url", "url": "https://data.alpaca.markets/v2/stocks/SPY/bars"},
-    "fetchedAt": "2026-08-16T11:45:00Z",
-    "completeness": "complete",
-    "evidenceBindings": [
-      {"field": "fetchedAt", "evidenceId": "ev-bars", "evidencePath": "fetchedAt"},
-      {"field": "instrument.symbol", "evidenceId": "ev-bars", "evidencePath": "instrument.symbol"},
-      {"field": "instrument.currency", "evidenceId": "ev-bars", "evidencePath": "instrument.currency"},
-      {"field": "instrument.region", "evidenceId": "ev-bars", "evidencePath": "instrument.region"},
-      {"field": "instrument.assetClass", "evidenceId": "ev-bars", "evidencePath": "instrument.assetClass"},
-      {"field": "instrument.exchange", "evidenceId": "ev-bars", "evidencePath": "instrument.exchange"},
-      {"field": "valueBasis", "evidenceId": "ev-bars", "evidencePath": "valueBasis"},
-      {"field": "marketScope", "evidenceId": "ev-bars", "evidencePath": "marketScope"},
-      {"field": "session", "evidenceId": "ev-bars", "evidencePath": "session"},
-      {"field": "bars.0.date", "evidenceId": "ev-bars", "evidencePath": "bars.0.date"},
-      {"field": "bars.0.open", "evidenceId": "ev-bars", "evidencePath": "bars.0.open"},
-      {"field": "bars.0.high", "evidenceId": "ev-bars", "evidencePath": "bars.0.high"},
-      {"field": "bars.0.low", "evidenceId": "ev-bars", "evidencePath": "bars.0.low"},
-      {"field": "bars.0.close", "evidenceId": "ev-bars", "evidencePath": "bars.0.close"},
-      {"field": "bars.0.volume", "evidenceId": "ev-bars", "evidencePath": "bars.0.volume"}
-    ],
-    "instrument": {"symbol": "SPY", "currency": "USD", "region": "US", "assetClass": "ETF", "exchange": "NYSE Arca"},
-    "valueBasis": "iex-trade-derived-bar",
-    "marketScope": "iex",
-    "session": "regular",
-    "bars": [{"date": "2026-08-15", "open": 644.0, "high": 648.0, "low": 642.0, "close": 645.0, "volume": 68000000}]
-  },
-  "evidence": [{"evidenceId": "ev-bars", "format": "structured", "content": {"sourceUrl": "https://data.alpaca.markets/v2/stocks/SPY/bars", "fetchedAt": "2026-08-16T11:45:00Z", "instrument": {"symbol": "SPY", "currency": "USD", "region": "US", "assetClass": "ETF", "exchange": "NYSE Arca"}, "valueBasis": "iex-trade-derived-bar", "marketScope": "iex", "session": "regular", "bars": [{"date": "2026-08-15", "open": 644.0, "high": 648.0, "low": 642.0, "close": 645.0, "volume": 68000000}]}}],
-  "normalizationAttempt": 1
-}
-```
-
-### Treasury validator fixture
-
-```json
-{
-  "request": {"capability": "treasury-yield-curve", "cutoff": "2026-08-16T12:00:00Z", "country": "US", "date": "2026-08-15"},
-  "candidate": {
-    "schemaVersion": "1.0",
-    "capability": "treasury-yield-curve",
-    "provider": "wolfram-language",
-    "sourceLocator": {"kind": "provider-query", "tool": "Wolfram Language", "queryDescriptor": "treasury-yield-curve:US:2026-08-15"},
-    "fetchedAt": "2026-08-16T11:45:00Z",
-    "completeness": "complete",
-    "evidenceBindings": [
-      {"field": "fetchedAt", "evidenceId": "ev-curve", "evidencePath": "fetchedAt"},
-      {"field": "country", "evidenceId": "ev-curve", "evidencePath": "country"},
-      {"field": "unit", "evidenceId": "ev-curve", "evidencePath": "unit"},
-      {"field": "date", "evidenceId": "ev-curve", "evidencePath": "date"},
-      {"field": "valueBasis", "evidenceId": "ev-curve", "evidencePath": "valueBasis"},
-      {"field": "maturities.2Y", "evidenceId": "ev-curve", "evidencePath": "maturities.2Y"},
-      {"field": "maturities.5Y", "evidenceId": "ev-curve", "evidencePath": "maturities.5Y"},
-      {"field": "maturities.10Y", "evidenceId": "ev-curve", "evidencePath": "maturities.10Y"},
-      {"field": "maturities.30Y", "evidenceId": "ev-curve", "evidencePath": "maturities.30Y"}
-    ],
-    "country": "US",
-    "unit": "percent",
-    "date": "2026-08-15",
-    "valueBasis": "us-treasury-yield-curve-rate",
-    "maturities": {"2Y": 3.61, "5Y": 3.74, "10Y": 4.02, "30Y": 4.61}
-  },
-  "evidence": [{"evidenceId": "ev-curve", "format": "structured", "content": {"fetchedAt": "2026-08-16T11:45:00Z", "country": "US", "unit": "percent", "date": "2026-08-15", "valueBasis": "us-treasury-yield-curve-rate", "maturities": {"2Y": 3.61, "5Y": 3.74, "10Y": 4.02, "30Y": 4.61}}}],
-  "normalizationAttempt": 1
-}
-```
-
-### Economic series validator fixture
-
-```json
-{
-  "request": {
-    "capability": "economic-time-series",
-    "cutoff": "2026-08-16T12:00:00Z",
-    "seriesId": "FRED:CPIAUCSL",
-    "semanticIdentity": "US consumer price index all urban consumers",
-    "frequency": "monthly",
-    "unit": "index-1982-1984=100",
-    "minimumHistory": 2,
-    "startDate": "2026-06-01",
-    "endDate": "2026-07-01"
-  },
-  "candidate": {
-    "schemaVersion": "1.0",
-    "capability": "economic-time-series",
-    "provider": "wolfram-language",
-    "sourceLocator": {"kind": "provider-query", "tool": "Wolfram Language", "queryDescriptor": "economic-time-series:FRED:CPIAUCSL:2026-06-01:2026-07-01"},
-    "fetchedAt": "2026-08-16T11:45:00Z",
-    "completeness": "complete",
-    "evidenceBindings": [
-      {"field": "fetchedAt", "evidenceId": "ev-economic", "evidencePath": "fetchedAt"},
-      {"field": "seriesId", "evidenceId": "ev-economic", "evidencePath": "seriesId"},
-      {"field": "semanticIdentity", "evidenceId": "ev-economic", "evidencePath": "semanticIdentity"},
-      {"field": "frequency", "evidenceId": "ev-economic", "evidencePath": "frequency"},
-      {"field": "unit", "evidenceId": "ev-economic", "evidencePath": "unit"},
-      {"field": "observations.0.date", "evidenceId": "ev-economic", "evidencePath": "observations.0.date"},
-      {"field": "observations.0.value", "evidenceId": "ev-economic", "evidencePath": "observations.0.value"},
-      {"field": "observations.1.date", "evidenceId": "ev-economic", "evidencePath": "observations.1.date"},
-      {"field": "observations.1.value", "evidenceId": "ev-economic", "evidencePath": "observations.1.value"}
-    ],
-    "seriesId": "FRED:CPIAUCSL",
-    "semanticIdentity": "US consumer price index all urban consumers",
-    "frequency": "monthly",
-    "unit": "index-1982-1984=100",
-    "observations": [{"date": "2026-06-01", "value": 323.0}, {"date": "2026-07-01", "value": 323.8}]
-  },
-  "evidence": [{"evidenceId": "ev-economic", "format": "structured", "content": {"fetchedAt": "2026-08-16T11:45:00Z", "seriesId": "FRED:CPIAUCSL", "semanticIdentity": "US consumer price index all urban consumers", "frequency": "monthly", "unit": "index-1982-1984=100", "observations": [{"date": "2026-06-01", "value": 323.0}, {"date": "2026-07-01", "value": 323.8}]}}],
-  "normalizationAttempt": 1
-}
-```
-
-### Partial validator fixture
-
-```json
-{
-  "request": {
-    "capability": "volatility-term-structure",
-    "cutoff": "2026-08-16T12:00:00Z",
-    "date": "2026-08-15"
-  },
-  "candidate": {
-    "schemaVersion": "1.0",
-    "capability": "volatility-term-structure",
-    "provider": "wolfram-language",
-    "sourceLocator": {
-      "kind": "provider-query",
-      "tool": "Wolfram Language",
-      "queryDescriptor": "volatility-term-structure:2026-08-15"
-    },
-    "fetchedAt": "2026-08-16T11:45:00Z",
-    "completeness": "partial",
-    "evidenceBindings": [
-      {"field": "fetchedAt", "evidenceId": "ev-vix", "evidencePath": "fetchedAt"},
-      {"field": "date", "evidenceId": "ev-vix", "evidencePath": "date"},
-      {"field": "unit", "evidenceId": "ev-vix", "evidencePath": "unit"},
-      {"field": "components.VIX9D", "evidenceId": "ev-vix", "evidencePath": "components.VIX9D"},
-      {"field": "components.VIX", "evidenceId": "ev-vix", "evidencePath": "components.VIX"}
-    ],
-    "date": "2026-08-15",
-    "unit": "index-points",
-    "components": {"VIX9D": 15.2, "VIX": 16.4}
-  },
-  "evidence": [
-    {
-      "evidenceId": "ev-vix",
-      "format": "structured",
-      "content": {"fetchedAt": "2026-08-16T11:45:00Z", "date": "2026-08-15", "unit": "index-points", "components": {"VIX9D": 15.2, "VIX": 16.4}}
-    }
-  ],
-  "normalizationAttempt": 1
-}
-```
-
-An accepted `complete` result short-circuits the capability. Do not call later providers; represent each skipped planned request truthfully as `not-attempted`. An accepted `partial` result is not a failure: preserve its usable observations and fetch only missing fields or components from the next provider. Never overwrite a usable component while filling another one.
-
-HYG/LQD and RSP/SPY are pair observations. Within a pair, do not mix providers, currencies, or value bases. Intersect raw provider-observed dates only, discard every non-common date before comparison, and then require the configured minimum common history: 6 dates for HYG/LQD and 21 for RSP/SPY. Never synthesize a date, forward-fill a missing leg, carry forward a stale value, or infer a point from a graph. A partial provider may contribute only if it preserves that same pair basis. Otherwise continue to the next provider for the whole missing pair rather than stitching two incomparable legs.
-
-Treasury value-basis labels are semantic, not cosmetic. The validator accepts the US Treasury par yield curve rate basis for the requested date; a constant-maturity series, bond price, yield-to-maturity, real yield, or forward rate is not an interchangeable substitute. For FRED, bind both the exact series ID or exclusive semantic identity and its frequency/unit/history. Treasury and FRED fallbacks remain official/public fallback observations; Wolfram does not become their storage authority.
-
-Pass `collect-market-data` the unchanged invocation-local plan plus one outcome for each requested supported capability instance. Each outcome repeats the exact validator request, its deterministic stable key, and one attempt row for every plan provider in exact order. The economic plan row declares five `scheduledSeriesIds`; submit exactly one distinct outcome for each, and never let a one-series subset claim overall scheduled success. When `validate-market-observation` accepts `completeness:"complete"`, map it to `status:"ok"`, put the accepted normalized observation object unchanged at that stable key, include the unchanged original `request,candidate,evidence,normalizationAttempt` object as `validationEnvelope`, and use empty `error` and `stage`; every later provider must be truthful `not-attempted` with `validationEnvelope:null`. When it accepts `completeness:"partial"`, map it to `status:"partial"`, use `error:"market_provider_partial"`, keep `stage` empty, include that same original validation envelope, and continue to the next provider. The collector calls the validator again and requires the returned observation to equal `values.<stableKey>` exactly before discarding the temporary envelope. An attempted failure uses `values:{}`, `validationEnvelope:null`, a bounded safe error such as `tool-unavailable`, `permission-denied`, `premium-feed-required`, `provider-no-result`, `provider-timeout`, or `provider-rate-limited`, and `stage:"fetch"` or `stage:"parse"`. Arbitrary scalars, raw/control objects outside the temporary envelope, credential-shaped keys, missing attempts, duplicate stable keys/providers, reordered attempts, flattened Treasury maturities, and planless provider rows are rejected.
-
-Treasury, equity pairs, and economic series are atomic: a later complete fallback replaces the earlier partial observation in effective `values` as a whole, while all provider rows remain visible. They are never stitched field by field. VIX is the only missing-component merge: retain each earlier accepted component, fill only absent symbols, and record each effective component's provider, source locator, observation date, and fetchedAt. Thus an earlier Wolfram VIX level cannot be overwritten by a later fallback while VIX3M is filled.
-
-The raw connector query, temporary plugin inputs, raw evidence, LLM-normalized candidates, validator errors/responses, tool-access payload, capability plan, and collection outcomes are invocation-local control data. Never put them in Notion, the registry, a local runtime ledger, or Report Markdown. An accepted observation may retain its validated public URL or deterministic `sourceLocator.queryDescriptor` as provenance; this descriptor is not the raw tool query. Persist only the ordinary human-readable Collection/Report/Story records already defined by the product schema, using accepted market observations as bounded evidence.
-
-## Contract map
-
-| Contract | Operational rule |
-|---|---|
-| cboe-independence | Cboe failure never removes an independently successful Google Finance or spreadsheet observation. |
-| binance-proxy-unchanged | This package contains no Binance adapter or persisted Binance proxy contract. `btc-usd` remains validatorSupported=false and scheduleEligible=false, so this release neither changes nor invents the separate legacy 24/7 perpetual-proxy acceptance boundary. |
-
 ## Capability-chain execution
 
 Run only independent capability chains concurrently. Inside one chain, call providers sequentially in the returned plan order, validate the attempt, and decide complete short-circuit versus partial continuation before starting the next provider. Restore planned capability and provider order when assembling rows. A complete short-circuit makes every later planned provider `not-attempted`; a partial result remains a `partial` row and an explicit gap. Apply the atomic-replacement and VIX-only missing-component policies above instead of generic nested-dictionary merging.
@@ -408,3 +225,7 @@ If all market providers are unavailable but at least one news feed succeeded, a 
 ## Alpaca connector fallback
 
 Read [alpaca-connector-fallback.md](alpaca-connector-fallback.md) before resolving toolAccess. `alpacaMarketData`, `alpacaOptions` and `alpacaCalendar` describe observed capabilities, not a single app identity. For each capability prefer original Alpaca then Paper Trading; both use data vendor `alpaca`. Keep actual connector/tool in temporary raw evidence, bind `data` fields exactly, and preserve returned plan order and validation. A Paper account is not market data and this path never authorizes writes.
+
+## Working Wolfram fallback
+
+Follow [wolfram-fallback.md](wolfram-fallback.md). Macro attempts use the logical action import_official_fred_csv, executed inside the current Wolfram Language evaluator; it is not a new MCP tool name. This transport retrieves FRED source data and must be disclosed as such. Native Wolfram Alpha macro queries are excluded from automatic macro plans after no-result probes. VIX routing is unchanged.

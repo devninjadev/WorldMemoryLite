@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from .feed import FEEDS, FeedOutcome
 from .market import MarketSnapshot, validate_market_snapshot
 from .registry import normalize_uuid, notion_page_id_from_url
+from .entity_completion import complete_entity_review
 
 
 _WRITE_STATUSES = frozenset({"confirmed", "verify-once", "failed"})
@@ -72,7 +73,10 @@ def resolve_write_response(kind: str, response: object) -> WriteOutcome:
                 ),
             )
         return _failed(normalized_kind)
-    if response_status is not None and response_status not in _CONFIRMED_RESPONSE_STATUSES:
+    if (
+        response_status is not None
+        and response_status not in _CONFIRMED_RESPONSE_STATUSES
+    ):
         return _failed(normalized_kind)
 
     return _resolve_sync_response(normalized_kind, response)
@@ -129,6 +133,7 @@ def build_user_result(
     story_updated: int = 0,
     changes_created: int = 0,
     warnings: Iterable[str] = (),
+    entity_completion: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """Build the user-visible completion/degradation summary for one run."""
 
@@ -155,10 +160,23 @@ def build_user_result(
     )
     _validate_prewrite_counts(report_outcome, counts)
 
+    entity_result = {"status": "not-run", "warnings": []}
+    if report_outcome.kind == "report" and report_outcome.status == "confirmed":
+        if entity_completion is None:
+            entity_result = {"status": "degraded", "warnings": [
+                "entity review/completion was not checked"]}
+        else:
+            entity_result = complete_entity_review(entity_completion)
+    elif entity_completion is not None:
+        raise ValueError("entity completion requires a confirmed new Report")
+    elif report_outcome.kind == "reused":
+        entity_result["status"] = "not-rechecked"
+
     success_count = sum(outcome.status == "ok" for outcome in outcomes)
     failure_count = len(outcomes) - success_count
     visible_warnings = _warnings(
-        warnings,
+        (*warnings, *(("entity work is incomplete; see observed storage/access gaps",)
+                       if entity_result["warnings"] else ())),
         report_outcome,
         collection_outcome,
         outcomes,
@@ -248,10 +266,7 @@ def _user_status(
     if (
         any(outcome.status != "ok" for outcome in outcomes)
         or market.status != "ok"
-        or (
-            collection_outcome is not None
-            and collection_outcome.status != "confirmed"
-        )
+        or (collection_outcome is not None and collection_outcome.status != "confirmed")
         or warnings
     ):
         return "degraded"
@@ -312,12 +327,16 @@ def _validate_outcome_roles(
         if report_outcome.status != "confirmed":
             raise ValueError("reused report outcome status must be confirmed")
         if collection_outcome is not None:
-            raise ValueError("reused report outcome cannot include a collection outcome")
+            raise ValueError(
+                "reused report outcome cannot include a collection outcome"
+            )
     elif report_outcome.kind == "safe-stop":
         if report_outcome.status != "failed" or report_outcome.locator:
             raise ValueError("safe-stop outcome must be an unlocated failed outcome")
         if report_markdown:
-            raise ValueError("safe-stop is pre-write and cannot include report markdown")
+            raise ValueError(
+                "safe-stop is pre-write and cannot include report markdown"
+            )
         if collection_outcome is not None:
             raise ValueError("safe-stop cannot include a collection outcome")
 
@@ -327,16 +346,16 @@ def _validate_outcome_roles(
 
 
 def _validate_outcome_locator(outcome: WriteOutcome, field_name: str) -> None:
-    located = bool(_canonical_page_id(outcome.locator) or _valid_notion_url(outcome.locator))
+    located = bool(
+        _canonical_page_id(outcome.locator) or _valid_notion_url(outcome.locator)
+    )
     if outcome.status in {"confirmed", "verify-once"} and not located:
         raise ValueError(f"{field_name} requires a valid Notion page locator")
     if outcome.status == "failed" and outcome.locator:
         raise ValueError(f"{field_name} failed status cannot contain a locator")
 
 
-def _validate_feed_state(
-    report_kind: str, outcomes: tuple[FeedOutcome, ...]
-) -> None:
+def _validate_feed_state(report_kind: str, outcomes: tuple[FeedOutcome, ...]) -> None:
     if report_kind == "reused":
         if outcomes:
             raise ValueError("reused outcome must not contain fresh feed outcomes")
@@ -357,9 +376,7 @@ def _validate_prewrite_counts(
     report_outcome: WriteOutcome, counts: tuple[int, int, int]
 ) -> None:
     if report_outcome.kind in {"safe-stop", "reused"} and any(counts):
-        raise ValueError(
-            f"{report_outcome.kind} Story counts must all be zero"
-        )
+        raise ValueError(f"{report_outcome.kind} Story counts must all be zero")
     if report_outcome.status != "confirmed" and any(counts):
         raise ValueError("unconfirmed Report Story counts must all be zero")
 

@@ -70,6 +70,9 @@ _STORY_REQUIRED = frozenset(
 )
 _STORY_ALLOWED = _STORY_REQUIRED | frozenset(
     {
+        "Companies",
+        "Industries",
+        "Events",
         "Related Stories",
         "date:First Seen:is_datetime",
         "date:Last Evidence At:is_datetime",
@@ -141,9 +144,7 @@ def resolve_report_view(
     )
     if not force and latest_world_memory_end is None and has_more:
         return _needs_more(window, last_window_end)
-    report_type = choose_report_type(
-        now_utc, latest_world_memory_end, force=force
-    )
+    report_type = choose_report_type(now_utc, latest_world_memory_end, force=force)
     return {
         "disposition": "create",
         "window": _window_mapping(window),
@@ -191,9 +192,7 @@ def normalize_story_view(
             raw["date:Last Evidence At:start"], "Last Evidence At"
         )
         _validate_datetime_marker(raw, "date:Last Evidence At:is_datetime")
-        last_updated = _timestamp(
-            raw["date:Last Updated:start"], "Last Updated"
-        )
+        last_updated = _timestamp(raw["date:Last Updated:start"], "Last Updated")
         _validate_datetime_marker(raw, "date:Last Updated:is_datetime")
         created_at = _timestamp(raw["Created At"], "Created At")
         if first_seen > last_evidence or last_evidence > last_updated:

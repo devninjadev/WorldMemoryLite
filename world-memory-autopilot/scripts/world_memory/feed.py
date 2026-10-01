@@ -102,14 +102,38 @@ class FeedSpec:
 
 
 FEEDS: tuple[FeedSpec, ...] = (
-    FeedSpec("financial_juice", "FinancialJuice", "https://rss.app/feeds/5VaycMAa8SwPhOAP.csv"),
-    FeedSpec("walter_bloomberg", "Walter Bloomberg", "https://rss.app/feeds/YcRRdWN5eSO3o2LP.csv"),
-    FeedSpec("wall_st_engine", "Wall St Engine", "https://rss.app/feeds/Hf52VRUllNu7gABF.csv"),
-    FeedSpec("first_squawk", "First Squawk", "https://rss.app/feeds/d68ow40E3dkwaEvN.csv", -540),
-    FeedSpec("unusual_whales", "unusual_whales", "https://rss.app/feeds/nikLNBATmLDuprRz.csv", -540),
+    FeedSpec(
+        "financial_juice",
+        "FinancialJuice",
+        "https://rss.app/feeds/5VaycMAa8SwPhOAP.csv",
+    ),
+    FeedSpec(
+        "walter_bloomberg",
+        "Walter Bloomberg",
+        "https://rss.app/feeds/YcRRdWN5eSO3o2LP.csv",
+    ),
+    FeedSpec(
+        "wall_st_engine", "Wall St Engine", "https://rss.app/feeds/Hf52VRUllNu7gABF.csv"
+    ),
+    FeedSpec(
+        "first_squawk",
+        "First Squawk",
+        "https://rss.app/feeds/d68ow40E3dkwaEvN.csv",
+        -540,
+    ),
+    FeedSpec(
+        "unusual_whales",
+        "unusual_whales",
+        "https://rss.app/feeds/nikLNBATmLDuprRz.csv",
+        -540,
+    ),
     FeedSpec("reuters", "Reuters", "https://rss.app/feeds/_fSiPEQ8FZXQdj4js.csv"),
-    FeedSpec("dow_jones", "Dow Jones Personal", "https://rss.app/feeds/_m6HwVpkVbkV6H1V6.csv"),
-    FeedSpec("bloomberg", "Bloomberg Personal", "https://rss.app/feeds/_t07deORnyZW90CjC.csv"),
+    FeedSpec(
+        "dow_jones", "Dow Jones Personal", "https://rss.app/feeds/_m6HwVpkVbkV6H1V6.csv"
+    ),
+    FeedSpec(
+        "bloomberg", "Bloomberg Personal", "https://rss.app/feeds/_t07deORnyZW90CjC.csv"
+    ),
 )
 
 
@@ -151,9 +175,7 @@ class _FeedSummaryParser(HTMLParser):
         self.blocked_tags: list[str] = []
         self.pending_blocked_closers: list[str] = []
 
-    def handle_starttag(
-        self, tag: str, attrs: list[tuple[str, str | None]]
-    ) -> None:
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         del attrs
         tag = tag.lower()
         if self.blocked_tags:
@@ -170,9 +192,7 @@ class _FeedSummaryParser(HTMLParser):
         if tag in _SUMMARY_BOUNDARY_TAGS:
             self.parts.append(" ")
 
-    def handle_startendtag(
-        self, tag: str, attrs: list[tuple[str, str | None]]
-    ) -> None:
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         del attrs
         tag = tag.lower()
         if not self.blocked_tags and (
@@ -257,9 +277,17 @@ def collect_feeds(
     _require_aware_datetime(now, "now")
     if not callable(fetcher):
         raise ValueError("fetcher must be callable")
-    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
+    if (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or timeout <= 0
+    ):
         raise ValueError("timeout must be a positive number")
-    if isinstance(max_workers, bool) or not isinstance(max_workers, int) or max_workers <= 0:
+    if (
+        isinstance(max_workers, bool)
+        or not isinstance(max_workers, int)
+        or max_workers <= 0
+    ):
         raise ValueError("max_workers must be a positive integer")
 
     outcomes: dict[str, FeedOutcome] = {}
@@ -272,7 +300,9 @@ def collect_feeds(
             feed = pending[future]
             try:
                 outcomes[feed.id] = future.result()
-            except Exception as exc:  # Defensive worker boundary; collection remains partial.
+            except (
+                Exception
+            ) as exc:  # Defensive worker boundary; collection remains partial.
                 outcomes[feed.id] = _error_outcome(
                     feed, exc, category="feed_worker", retryable=True
                 )
@@ -284,7 +314,11 @@ def direct_http_fetch(url: str, timeout: float) -> bytes:
 
     if url not in {feed.url for feed in FEEDS}:
         raise ValueError("url must identify a configured feed")
-    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
+    if (
+        isinstance(timeout, bool)
+        or not isinstance(timeout, (int, float))
+        or timeout <= 0
+    ):
         raise ValueError("timeout must be a positive number")
     request = Request(
         url,
@@ -314,7 +348,9 @@ def collect_feed_window(
 ) -> dict[str, object]:
     """Collect, normalize, window-filter, and diagnose all configured feeds."""
 
-    window_start = _require_aware_datetime(window_start, "window_start").astimezone(_UTC)
+    window_start = _require_aware_datetime(window_start, "window_start").astimezone(
+        _UTC
+    )
     window_end = _require_aware_datetime(window_end, "window_end").astimezone(_UTC)
     fetched_at = _require_aware_datetime(fetched_at, "fetched_at").astimezone(_UTC)
     if window_start >= window_end:
@@ -362,7 +398,9 @@ def collect_feed_window(
         retained_counts[item.source_id] += 1
     success_count = sum(outcome.status == "ok" for outcome in outcomes)
     failure_count = len(outcomes) - success_count
-    status = "failed" if success_count == 0 else "partial" if failure_count else "complete"
+    status = (
+        "failed" if success_count == 0 else "partial" if failure_count else "complete"
+    )
 
     return {
         "status": status,
@@ -457,7 +495,15 @@ def _collect_one(feed: FeedSpec, fetcher: Fetcher, timeout: float) -> FeedOutcom
 def _parse_csv(feed: FeedSpec, response: bytes) -> tuple[tuple[FeedItem, ...], int]:
     if not isinstance(response, bytes):
         raise TypeError("feed response must be UTF-8 bytes")
-    text = response.decode("utf-8", errors="strict")
+    return parse_feed_csv(feed, response.decode("utf-8", errors="strict"))
+
+
+def parse_feed_csv(
+    feed: FeedSpec, text: str, *, strict: bool = False
+) -> tuple[tuple[FeedItem, ...], int]:
+    """Normalize supplied CSV; strict manual input rejects any invalid row."""
+    if type(text) is not str:
+        raise TypeError("CSV must be text")
     if text.startswith("\ufeff"):
         raise ValueError("RSS.app CSV must be UTF-8 without a BOM")
 
@@ -499,6 +545,8 @@ def _parse_csv(feed: FeedSpec, response: bytes) -> tuple[tuple[FeedItem, ...], i
                 )
             )
         except (TypeError, UnicodeError, ValueError):
+            if strict:
+                raise
             rejected_item_count += 1
     if rejected_item_count and not items:
         raise ValueError("RSS.app CSV contains rows but none are valid")
@@ -512,7 +560,9 @@ def _normalize_timestamp(value: str, offset_minutes: int) -> str:
         try:
             parsed = parsedate_to_datetime(value)
         except (TypeError, ValueError) as exc:
-            raise ValueError("RSS.app Date must be an ISO 8601 or RFC 2822 timestamp") from exc
+            raise ValueError(
+                "RSS.app Date must be an ISO 8601 or RFC 2822 timestamp"
+            ) from exc
     parsed = _require_aware_datetime(parsed, "RSS.app Date")
     normalized = parsed.astimezone(_UTC) + timedelta(minutes=offset_minutes)
     return normalized.isoformat().replace("+00:00", "Z")
@@ -527,7 +577,10 @@ def _canonical_url(value: str) -> str:
         port = parsed.port
     except ValueError as exc:
         raise ValueError("URL has an invalid port") from exc
-    if port is not None and not ((parsed.scheme.lower() == "http" and port == 80) or (parsed.scheme.lower() == "https" and port == 443)):
+    if port is not None and not (
+        (parsed.scheme.lower() == "http" and port == 80)
+        or (parsed.scheme.lower() == "https" and port == 443)
+    ):
         hostname = f"{hostname}:{port}"
     if parsed.username is not None or parsed.password is not None:
         raise ValueError("URL must not contain user credentials")
@@ -535,7 +588,8 @@ def _canonical_url(value: str) -> str:
         [
             (key, item)
             for key, item in parse_qsl(parsed.query, keep_blank_values=True)
-            if not key.lower().startswith("utm_") and key.lower() not in _TRACKING_PARAMETERS
+            if not key.lower().startswith("utm_")
+            and key.lower() not in _TRACKING_PARAMETERS
         ],
         doseq=True,
     )
@@ -549,7 +603,9 @@ def _collapsed(value: object) -> str:
 def _error_outcome(
     feed: FeedSpec, exc: Exception, *, category: str, retryable: bool
 ) -> FeedOutcome:
-    return FeedOutcome(feed.id, feed.name, "error", (), _safe_error(category, exc), retryable)
+    return FeedOutcome(
+        feed.id, feed.name, "error", (), _safe_error(category, exc), retryable
+    )
 
 
 def _fetch_error(exc: Exception) -> tuple[str, bool]:
@@ -564,7 +620,11 @@ def _fetch_error(exc: Exception) -> tuple[str, bool]:
         if isinstance(reason, HTTPError):
             status = reason.code
             if type(status) is int and 100 <= status <= 599:
-                return f"feed_fetch_http_{status}", status in {408, 425, 429} or 500 <= status <= 599
+                return f"feed_fetch_http_{status}", status in {
+                    408,
+                    425,
+                    429,
+                } or 500 <= status <= 599
             return "feed_fetch_http_error", False
         if isinstance(reason, URLError) and isinstance(reason.reason, Exception):
             reason = reason.reason
@@ -595,6 +655,10 @@ def _safe_error(category: str, exc: Exception) -> str:
 
 
 def _require_aware_datetime(value: object, field_name: str) -> datetime:
-    if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
+    if (
+        not isinstance(value, datetime)
+        or value.tzinfo is None
+        or value.utcoffset() is None
+    ):
         raise ValueError(f"{field_name} must be a timezone-aware datetime")
     return value

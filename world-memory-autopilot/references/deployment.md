@@ -1,6 +1,6 @@
 # Deployment
 
-Use this reference only for explicit setup, deployment, canary, rollback, or user-approved repair. Normal scheduled operation follows `SKILL.md` and cannot enter this mode by itself.
+Use this reference only for explicit setup, deployment, canary, rollback, or user-approved repair. Normal scheduled operation follows `SKILL.md`. Its explicitly enabled additive-entities-v1 upgrade uses entity-extension.md without entering general setup/repair.
 
 ## Deterministic CLI
 
@@ -8,7 +8,7 @@ Use this reference only for explicit setup, deployment, canary, rollback, or use
 |---|---|---|
 | bootstrap-plan | workspaceId | finite fresh-install action plan |
 | resolve-registry-discovery | workspaceId,candidates | bounded read-only registry recovery result |
-| render-scheduled-prompt | schemaVersion,workspaceId,hub,collections,stories,storyChanges,reports,views,marketSources | self-contained scheduled prompt |
+| render-scheduled-prompt | registry or {registry,entityUpgradePolicy} | compact launcher plus one configuration block; requires installed skill |
 | verify-live | registry,workspaceId,toolAccess,schemaProjections,viewProjections | validation of supplied canary evidence |
 
 ## Structured CLI input shapes
@@ -20,7 +20,7 @@ Use this reference only for explicit setup, deployment, canary, rollback, or use
 | candidates[] | exact keys pageId,url,title,marker,workspaceRoot,installation; installation is null for a non-v2 candidate or has exact keys databases,views for a v2 candidate |
 | installation.databases | exact keys collections,stories,storyChanges,reports; each has title,databaseUrl,parentPageId,dataSourceId,properties |
 | installation.views | exact keys reportsRecent,storiesCurrent; each has name,databaseUrl,viewId,dataSourceId,displayProperties,sorts |
-| render-scheduled-prompt | the exact Canonical registry object in notion-layout.md |
+| render-scheduled-prompt | the Canonical registry object in notion-layout.md, or {registry,entityUpgradePolicy} with additive-entities-v1 or disabled |
 | verify-live.registry/workspaceId | the exact Canonical registry plus the same workspace UUID |
 | verify-live.toolAccess | exact boolean keys fetchSelf,queryDataSources,fetchPages,createPages,updatePages; all true |
 | verify-live.schemaProjections | exact keys collections,stories,storyChanges,reports; each value has exact keys dataSourceId,properties |
@@ -33,7 +33,7 @@ Use this reference only for explicit setup, deployment, canary, rollback, or use
 
 | Contract | Operational rule |
 |---|---|
-| setup-separation | Fresh setup and repair are explicit user-approved modes; scheduled operation cannot create or change schema, delete, move, adopt, or repair storage. |
+| setup-separation | Fresh setup and repair are explicit user-approved modes; outside that enabled extension, scheduled operation cannot create or change schema, delete, move, adopt, or repair storage. |
 
 ## Official capability check
 
@@ -97,4 +97,29 @@ Preserve source outcome fields and successful feeds. Do not add hidden retries, 
 
 ## Publisher-search deployment
 
-Render the current scheduled prompt with render-scheduled-prompt and update the existing World Memory automation prompt, preserving its registry, active state, cadence and timezone. Verify the returned prompt uses publisher-web-search-v2 and no RSS success gate. Do not create a replacement automation. This authorized source change does not modify Notion schemas. Legacy RSS diagnostics above apply only to explicit RSS tasks.
+Render the current scheduled prompt with render-scheduled-prompt and update the existing World Memory automation prompt, preserving its registry, active state, cadence and timezone. Verify its configuration preserves the exact registry and the installed skill uses publisher-web-search-v5 with no RSS success gate. Do not create a replacement automation. This authorized source change does not modify Notion schemas. Legacy RSS diagnostics above apply only to explicit RSS tasks.
+
+## Additive rollout and compact launcher
+
+Preserve the exact existing registry and schedule identity. Render the current prompt to include seven market access flags and `entityUpgradePolicy: additive-entities-v1`. Apply only an explicitly authorized schedule update; installing a local skill does not modify a cloud schedule or its connector permissions. Fresh setup first completes the core four-DB bootstrap, then runs the same bounded entity extension. Validate newly added structure with entity-extension-plan; verify-live remains the core canary. Disabling the extension preserves its records.
+
+The v0.19 launcher deliberately delegates operating rules to the installed SKILL.md and its references. Do not schedule it in an environment that cannot load that skill. The single `<world_memory_config>` JSON block carries registry, entityUpgradePolicy and marketToolAccess. Replace null access flags using current tool discovery; build market-data-plan input as {registry: config.registry, toolAccess: config.marketToolAccess}. Installing a local release does not update an existing remote prompt.
+
+
+The v0.22 launcher requires mandatory entityContext plan validation and the
+prepare-report and complete-entity-review commands. During an authorized update, regenerate the
+existing automation prompt after installing the skill; preserve its exact
+registry, policy, active state, cadence and timezone. Verify both required-review
+lines and internal-completion lines in the live prompt. Older validation inputs
+are deliberately rejected rather than silently disabling required review.
+
+
+The v0.23 news update uses one cached FinancialJuice RSS request as optional
+discovery input, broad topic searches, and soft event-diversity guidance. Update
+the existing launcher after saving this skill; preserve registry, entity policy,
+cadence, timezone and enabled state. Do not alter market-data behavior.
+
+The v0.24 news update restores the four validated RSS.app XML feeds listed in
+publisher-web-search.md, with separate per-feed cached outcomes and the existing
+First Squawk timestamp correction. Keep unusual_whales disabled after HTTP 502.
+Update the existing launcher only; preserve market sources, registry and schedule.

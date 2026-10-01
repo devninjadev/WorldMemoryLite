@@ -5,7 +5,12 @@ interface:
   icon_large: assets/icon.svg
   default_prompt: Use $world-memory-autopilot with notion-native-v2 saved Notion views
     for SQL-free same-window Report reuse, partial-source continuation, and six-hour
-    Story integration.
+    Story integration. Complete internal company, industry and event review before
+    preparing a Report request; keep review results out of Report prose.
 policy:
-  products: [CHAT, CODEX]
+  products:
+  - chatgpt
+  - codex
+  - api
+  - atlas
   allow_implicit_invocation: true

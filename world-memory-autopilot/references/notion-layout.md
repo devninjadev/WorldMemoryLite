@@ -32,7 +32,7 @@ Embed this exact-shape address book in the scheduled prompt after bootstrap repl
 }
 ```
 
-The registry contains immutable addresses only. Never add observations, fetch state, provider results, cursors, run state, locks, model output, or mutable audit fields. `marketSources.vixSpreadsheet` is the package-owned exact public source address and ordered symbol contract; it is not a cache or provider receipt. The four data sources below are the complete storage surface. In Notion's current model, the database container ID and data_source_id are different identifiers, and a database URL contains the database container ID. Consequently, each runtime data source locator stores only dataSourceId; do not persist a database URL, database container ID, or any other field there. The Hub remains a page locator whose URL is bound to its pageId. Saved views are separate read locators: each exact locator has only `url`, the URL path contains one database container UUID, and its only query parameter is the `v` view UUID. Runtime never changes either view.
+The registry contains immutable addresses only. Never add observations, fetch state, provider results, cursors, run state, locks, model output, or mutable audit fields. `marketSources.vixSpreadsheet` is the package-owned exact public source address and ordered symbol contract; it is not a cache or provider receipt. The four data sources below are the compatible core storage surface. The optional entity extension is defined in entity-extension.md. In Notion's current model, the database container ID and data_source_id are different identifiers, and a database URL contains the database container ID. Consequently, each runtime data source locator stores only dataSourceId; do not persist a database URL, database container ID, or any other field there. The Hub remains a page locator whose URL is bound to its pageId. Saved views are separate read locators: each exact locator has only `url`, the URL path contains one database container UUID, and its only query parameter is the `v` view UUID. Runtime never changes either view.
 
 ## Deterministic CLI
 
@@ -137,3 +137,7 @@ Normal operation reads these saved views through `notion_query_data_sources` onl
 ## Property transport
 
 Use ordinary Notion property values. At the MCP boundary, dates use `date:<Property>:start` plus `date:<Property>:is_datetime`. Relations contain confirmed page IDs. Collection, Story, Story Change, and Report bodies are readable Markdown.
+
+## Optional entity addresses
+
+The exact base registry may additionally contain `entitySources`, a mapping from any registered subset of `industries`, `companies`, `events` to `{dataSourceId}`. These immutable addresses are also recorded in the exact Hub entity-extension section. They are not tickers, page titles, cursors or per-run state. An old registry without this key remains valid. Use entity-extension.md for bounded upgrade and recovery; never silently adopt a title match.

@@ -107,9 +107,7 @@ def _registry_from_candidate(
         raise ValueError("Hub URL does not match pageId")
 
     installation = candidate["installation"]
-    _require_exact_keys(
-        installation, frozenset({"databases", "views"}), "installation"
-    )
+    _require_exact_keys(installation, frozenset({"databases", "views"}), "installation")
     raw_databases = installation["databases"]
     _require_exact_keys(raw_databases, frozenset(_DATABASE_KEYS), "databases")
 
@@ -172,9 +170,10 @@ def _registry_from_candidate(
             raise ValueError("view name does not match")
         if _database_url(observed["databaseUrl"]) != database["databaseUrl"]:
             raise ValueError("view database does not match")
-        if normalize_uuid(observed["dataSourceId"], "view dataSourceId") != database[
-            "dataSourceId"
-        ]:
+        if (
+            normalize_uuid(observed["dataSourceId"], "view dataSourceId")
+            != database["dataSourceId"]
+        ):
             raise ValueError("view data source does not match")
         if observed["displayProperties"] != contract["displayProperties"]:
             raise ValueError("view display properties do not match")
