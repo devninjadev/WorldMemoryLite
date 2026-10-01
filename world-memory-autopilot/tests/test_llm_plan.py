@@ -35,6 +35,7 @@ CTX = ValidationContext(
     known_story_locators=frozenset({STORY_ID}),
     evidence_item_ids=frozenset({"item-1"}),
     expected_report_type="world-memory",
+    entity_review_required=False,
 )
 REPORT_MARKDOWN = """# 🌍 변동성은 낮지만 경계는 남아 있다
 
@@ -240,6 +241,7 @@ class LlmPlanValidationTests(unittest.TestCase):
             known_story_locators={STORY_ID},
             evidence_item_ids={"item-1"},
             expected_report_type="world-memory",
+            entity_review_required=False,
         )
         self.assertEqual(result["storyDecisions"][0]["changeType"], "reframed")
         self.assertIsNot(result, VALID)
@@ -255,6 +257,7 @@ class LlmPlanValidationTests(unittest.TestCase):
             known_story_locators={STORY_ID},
             evidence_item_ids={"item-1"},
             expected_report_type="world-memory",
+            entity_review_required=False,
         )
 
         headings = [
@@ -286,6 +289,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                 known_story_locators={STORY_ID},
                 evidence_item_ids={"item-1"},
                 expected_report_type="world-memory",
+                entity_review_required=False,
             )
 
     def test_key_takeaway_requires_three_to_five_unordered_items(self) -> None:
@@ -308,6 +312,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                         known_story_locators={STORY_ID},
                         evidence_item_ids={"item-1"},
                         expected_report_type="world-memory",
+                        entity_review_required=False,
                     )
 
     def test_report_type_controls_narrative_paragraph_minimums(self) -> None:
@@ -330,6 +335,7 @@ class LlmPlanValidationTests(unittest.TestCase):
             known_story_locators={STORY_ID},
             evidence_item_ids={"item-1"},
             expected_report_type="briefing",
+            entity_review_required=False,
         )
 
         world_memory = copy.deepcopy(VALID)
@@ -340,6 +346,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                 known_story_locators={STORY_ID},
                 evidence_item_ids={"item-1"},
                 expected_report_type="world-memory",
+                entity_review_required=False,
             )
 
     def test_briefing_rejects_one_narrative_paragraph(self) -> None:
@@ -357,6 +364,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                 known_story_locators={STORY_ID},
                 evidence_item_ids={"item-1"},
                 expected_report_type="briefing",
+                entity_review_required=False,
             )
 
     def test_narrative_sections_reject_top_level_lists(self) -> None:
@@ -383,6 +391,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                         known_story_locators={STORY_ID},
                         evidence_item_ids={"item-1"},
                         expected_report_type="world-memory",
+                        entity_review_required=False,
                     )
 
     def test_narrative_sections_have_no_maximum_and_ignore_code_markers(self) -> None:
@@ -412,6 +421,7 @@ class LlmPlanValidationTests(unittest.TestCase):
             known_story_locators={STORY_ID},
             evidence_item_ids={"item-1"},
             expected_report_type="world-memory",
+            entity_review_required=False,
         )
         self.assertEqual(result["report"]["markdown"], markdown)
 
@@ -431,6 +441,7 @@ class LlmPlanValidationTests(unittest.TestCase):
             known_story_locators={STORY_ID},
             evidence_item_ids={"item-1"},
             expected_report_type="world-memory",
+            entity_review_required=False,
         )
         self.assertEqual(result["report"]["markdown"], accepted["report"]["markdown"])
 
@@ -461,6 +472,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                         known_story_locators={STORY_ID},
                         evidence_item_ids={"item-1"},
                         expected_report_type="world-memory",
+                        entity_review_required=False,
                     )
 
     def test_story_and_change_markdown_keep_their_fixed_h1_contracts(self) -> None:
@@ -477,6 +489,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                         known_story_locators={STORY_ID},
                         evidence_item_ids={"item-1"},
                         expected_report_type="world-memory",
+                        entity_review_required=False,
                     )
 
     def test_required_headings_inside_indented_code_are_rejected_for_every_role(self) -> None:
@@ -529,6 +542,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                         known_story_locators={STORY_ID},
                         evidence_item_ids={"item-1"},
                         expected_report_type="world-memory",
+                        entity_review_required=False,
                     )
 
     def test_invalid_fence_closers_never_release_required_headings(self) -> None:
@@ -605,6 +619,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                         known_story_locators={STORY_ID},
                         evidence_item_ids={"item-1"},
                         expected_report_type="world-memory",
+                        entity_review_required=False,
                     )
 
     def test_accepts_commonmark_fences_and_headings_at_three_space_indentation(self) -> None:
@@ -649,6 +664,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                     known_story_locators={STORY_ID},
                     evidence_item_ids={"item-1"},
                     expected_report_type="world-memory",
+                    entity_review_required=False,
                 )
                 self.assertEqual(
                     (
@@ -669,6 +685,7 @@ class LlmPlanValidationTests(unittest.TestCase):
             known_story_locators={STORY_ID},
             evidence_item_ids={"item-1"},
             expected_report_type="world-memory",
+            entity_review_required=False,
         )
 
         self.assertEqual(result["storyDecisions"], [])
@@ -714,6 +731,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                         known_story_locators={STORY_ID},
                         evidence_item_ids=evidence_ids,
                         expected_report_type="world-memory",
+                        entity_review_required=False,
                     )
 
     def test_clusters_require_known_bindings_and_closed_report_sections(self) -> None:
@@ -731,6 +749,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                 known_story_locators={STORY_ID},
                 evidence_item_ids={"item-1"},
                 expected_report_type="world-memory",
+                entity_review_required=False,
             )
 
     def test_clusters_require_unique_members_and_exactly_once_evidence_coverage(self) -> None:
@@ -753,6 +772,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                 known_story_locators={STORY_ID},
                 evidence_item_ids={"item-1"},
                 expected_report_type="world-memory",
+                entity_review_required=False,
             )
 
         duplicate_across_clusters = copy.deepcopy(VALID)
@@ -771,6 +791,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                 known_story_locators={STORY_ID},
                 evidence_item_ids={"item-1", "item-2"},
                 expected_report_type="world-memory",
+                entity_review_required=False,
             )
 
         missing_evidence = copy.deepcopy(VALID)
@@ -780,6 +801,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                 known_story_locators={STORY_ID},
                 evidence_item_ids={"item-1", "item-2"},
                 expected_report_type="world-memory",
+                entity_review_required=False,
             )
 
     def test_every_cluster_has_report_coverage_and_high_cluster_cannot_be_empty(self) -> None:
@@ -799,6 +821,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                         known_story_locators={STORY_ID},
                         evidence_item_ids={"item-1"},
                         expected_report_type="world-memory",
+                        entity_review_required=False,
                     )
 
     def test_rejects_unknown_story_and_evidence(self) -> None:
@@ -811,6 +834,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                 known_story_locators={STORY_ID},
                 evidence_item_ids={"item-1"},
                 expected_report_type="world-memory",
+                entity_review_required=False,
             )
 
     def test_rejects_extra_keys(self) -> None:
@@ -822,6 +846,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                 known_story_locators={STORY_ID},
                 evidence_item_ids={"item-1"},
                 expected_report_type="world-memory",
+                entity_review_required=False,
             )
 
     def test_rejects_non_string_dict_keys_with_a_stable_error(self) -> None:
@@ -831,6 +856,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                 known_story_locators={STORY_ID},
                 evidence_item_ids={"item-1"},
                 expected_report_type="world-memory",
+                entity_review_required=False,
             )
 
     def test_rejects_bool_instead_of_string_or_list_value(self) -> None:
@@ -843,6 +869,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                 known_story_locators={STORY_ID},
                 evidence_item_ids={"item-1"},
                 expected_report_type="world-memory",
+                entity_review_required=False,
             )
 
     def test_rejects_empty_markdown(self) -> None:
@@ -856,6 +883,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                 known_story_locators={STORY_ID},
                 evidence_item_ids={"item-1"},
                 expected_report_type="world-memory",
+                entity_review_required=False,
             )
 
     def test_rejects_duplicate_decisions_for_one_story(self) -> None:
@@ -867,6 +895,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                 known_story_locators={STORY_ID},
                 evidence_item_ids={"item-1"},
                 expected_report_type="world-memory",
+                entity_review_required=False,
             )
 
     def test_rejects_relationship_change_without_known_related_story(self) -> None:
@@ -878,6 +907,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                 known_story_locators={STORY_ID},
                 evidence_item_ids={"item-1"},
                 expected_report_type="world-memory",
+                entity_review_required=False,
             )
 
     def test_rejects_scheduled_merge_or_split_action(self) -> None:
@@ -891,6 +921,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                         known_story_locators={STORY_ID},
                         evidence_item_ids={"item-1"},
                         expected_report_type="world-memory",
+                        entity_review_required=False,
                     )
 
     def test_rejects_report_type_mismatch(self) -> None:
@@ -900,6 +931,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                 known_story_locators={STORY_ID},
                 evidence_item_ids={"item-1"},
                 expected_report_type="briefing",
+                entity_review_required=False,
             )
 
     def test_create_requires_empty_locator_and_update_requires_known_locator(self) -> None:
@@ -915,6 +947,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                     known_story_locators={STORY_ID},
                     evidence_item_ids={"item-1"},
                     expected_report_type="world-memory",
+                    entity_review_required=False,
                 )
 
     def test_update_rejects_empty_locator_even_if_context_contains_empty(self) -> None:
@@ -927,6 +960,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                 known_story_locators={"", STORY_ID},
                 evidence_item_ids={"item-1"},
                 expected_report_type="world-memory",
+                entity_review_required=False,
             )
 
     def test_story_content_rejects_a_page_title_before_the_fixed_first_heading(self) -> None:
@@ -945,6 +979,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                         known_story_locators={STORY_ID},
                         evidence_item_ids={"item-1"},
                         expected_report_type="world-memory",
+                        entity_review_required=False,
                     )
 
     def test_rejects_late_or_duplicated_h1_across_all_content_types(self) -> None:
@@ -978,6 +1013,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                             known_story_locators={STORY_ID},
                             evidence_item_ids={"item-1"},
                             expected_report_type="world-memory",
+                            entity_review_required=False,
                         )
 
     def test_rejects_missing_or_out_of_order_required_markdown_sections(self) -> None:
@@ -1012,6 +1048,7 @@ class LlmPlanValidationTests(unittest.TestCase):
                         known_story_locators={STORY_ID},
                         evidence_item_ids={"item-1"},
                         expected_report_type="world-memory",
+                        entity_review_required=False,
                     )
 
 
@@ -1080,6 +1117,7 @@ class LlmPlanRepairTests(unittest.TestCase):
             known_story_locators=frozenset({duplicated_locator}),
             evidence_item_ids=frozenset({"item-1"}),
             expected_report_type="world-memory",
+            entity_review_required=False,
         )
         run_plan_with_repair(
             lambda payload: calls.append(payload) or invalid,

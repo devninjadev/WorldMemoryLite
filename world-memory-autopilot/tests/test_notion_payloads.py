@@ -9,7 +9,6 @@ import unittest
 from world_memory.feed import FeedItem, FeedOutcome, normalize_feed_summary
 from world_memory.market import MarketSnapshot, ProviderResult
 from world_memory.notion_payloads import (
-    collection_pages,
     collection_page,
     report_page,
     story_change_page,
@@ -18,6 +17,7 @@ from world_memory.notion_payloads import (
 )
 from world_memory.registry import Registry
 from world_memory.windows import Window
+from tests.test_llm_plan import REPORT_MARKDOWN
 
 
 WORKSPACE_ID = "11111111-1111-4111-8111-111111111111"
@@ -134,6 +134,12 @@ PLAN = {
         }
     ],
 }
+PLAN["report"]["markdown"] = REPORT_MARKDOWN
+REPORT_VALIDATION = {
+    "candidate": PLAN, "knownStoryIds": [], "evidenceItemIds": ["item-1"],
+    "expectedReportType": "world-memory",
+    "entityContext": {"policy": "disabled", "readiness": "disabled", "reason": "Core payload test with entity extension disabled"},
+}
 NOW = dt("2026-08-14T03:30:00Z")
 DECISION = {
     "action": "create",
@@ -161,39 +167,6 @@ DECISION = {
 
 
 class CollectionPayloadTests(unittest.TestCase):
-    def test_large_collection_is_split_into_sequential_page_requests(self) -> None:
-        items = tuple(
-            FeedItem(
-                item_id=f"item-{index}",
-                source_id="reuters",
-                source_name="Reuters Business",
-                title=f"Headline {index}",
-                url=f"https://example.com/article-{index}",
-                published_at="2026-08-14T01:15:00Z",
-                summary=f"Summary {index}",
-            )
-            for index in range(101)
-        )
-        outcomes = (FeedOutcome("reuters", "Reuters Business", "ok", items, "", False),)
-
-        requests = collection_pages(REGISTRY, WINDOW, outcomes, MARKET)
-
-        self.assertEqual(len(requests), 3)
-        self.assertEqual(
-            [request["pages"][0]["properties"]["Item Count"] for request in requests],
-            [50, 50, 1],
-        )
-        self.assertEqual(
-            [request["pages"][0]["properties"]["Name"] for request in requests],
-            [
-                "Collection · 2026-08-14 09:00–12:00 KST · 1/3",
-                "Collection · 2026-08-14 09:00–12:00 KST · 2/3",
-                "Collection · 2026-08-14 09:00–12:00 KST · 3/3",
-            ],
-        )
-        combined = "\n".join(request["pages"][0]["content"] for request in requests)
-        for index in range(101):
-            self.assertEqual(combined.count(f"### Headline {index}\n"), 1)
 
     def test_collection_is_plain_markdown_grouped_by_source(self) -> None:
         payload = collection_page(REGISTRY, WINDOW, OUTCOMES, MARKET)
@@ -476,7 +449,7 @@ class ReportPayloadTests(unittest.TestCase):
         payload = report_page(
             REGISTRY,
             WINDOW,
-            PLAN,
+            REPORT_VALIDATION,
             relations={"Collection": [COLLECTION_ID], "Stories": [STORY_ID]},
         )
 
@@ -492,7 +465,7 @@ class ReportPayloadTests(unittest.TestCase):
         properties = report_page(
             REGISTRY,
             WINDOW,
-            PLAN,
+            REPORT_VALIDATION,
             relations={"Collection": [COLLECTION_ID], "Stories": [STORY_ID]},
         )["pages"][0]["properties"]
 
@@ -523,7 +496,7 @@ class ReportPayloadTests(unittest.TestCase):
         properties = report_page(
             REGISTRY,
             window,
-            PLAN,
+            REPORT_VALIDATION,
             relations={"Collection": [COLLECTION_ID], "Stories": [STORY_ID]},
         )["pages"][0]["properties"]
 
@@ -765,7 +738,7 @@ class StoryPayloadTests(unittest.TestCase):
         report_properties = report_page(
             REGISTRY,
             WINDOW,
-            PLAN,
+            REPORT_VALIDATION,
             relations={"Collection": [COLLECTION_ID.replace("-", "").upper()]},
         )["pages"][0]["properties"]
         self.assertEqual(report_properties["Collection"], [COLLECTION_ID])
@@ -779,7 +752,7 @@ class StoryPayloadTests(unittest.TestCase):
             report_page(
                 REGISTRY,
                 WINDOW,
-                PLAN,
+                REPORT_VALIDATION,
                 relations={"Collection": ["not-a-page-id"]},
             )
 

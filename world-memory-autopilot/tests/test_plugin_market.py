@@ -498,7 +498,7 @@ class PluginMarketPlanTests(unittest.TestCase):
                 self.assertIn(invocation["evidenceFormat"], {"structured", "text"})
                 self.assertEqual(invocation["rawQueryPersistence"], "forbidden")
                 if invocation["kind"] == "public-http":
-                    self.assertEqual(invocation["tool"], "HTTP")
+                    self.assertEqual(invocation["tool"], "web.open + world_memory.google_finance.parse_quote" if attempt["provider"] == "google-finance" else "HTTP")
                     self.assertEqual(invocation["method"], "GET")
                     self.assertTrue(
                         invocation["endpointTemplate"].startswith("https://")
@@ -548,11 +548,11 @@ class PluginMarketPlanTests(unittest.TestCase):
 
         self.assertEqual(
             plan["capabilities"]["treasury-yield-curve"]["providers"],
-            ["wolfram-language", "wolfram-alpha", "treasury-csv", "treasury-xml"],
+            ["wolfram-language", "treasury-csv", "treasury-xml"],
         )
         self.assertEqual(
             plan["capabilities"]["economic-time-series"]["providers"],
-            ["wolfram-language", "wolfram-alpha", "fred-batch", "fred-page"],
+            ["wolfram-language", "fred-batch", "fred-page"],
         )
         self.assertEqual(
             plan["capabilities"]["economic-time-series"].get("scheduledSeriesIds"),
@@ -566,17 +566,17 @@ class PluginMarketPlanTests(unittest.TestCase):
         )
         treasury = plan["capabilities"]["treasury-yield-curve"]["attempts"]
         self.assertEqual(
-            treasury[2]["invocation"]["endpointTemplate"],
+            treasury[1]["invocation"]["endpointTemplate"],
             "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/{date.year}/all",
         )
         fred = plan["capabilities"]["economic-time-series"]["attempts"]
         self.assertEqual(
-            fred[2]["invocation"]["endpointTemplate"],
+            fred[1]["invocation"]["endpointTemplate"],
             "https://fred.stlouisfed.org/graph/fredgraph.csv?id={seriesIdWithoutPrefix}",
         )
         self.assertEqual(
             plan["capabilities"]["volatility-term-structure"]["providers"],
-            ["wolfram-language", "wolfram-alpha", "spreadsheet", "cboe"],
+            ["google-finance", "wolfram-language", "wolfram-alpha", "cboe", "spreadsheet"],
         )
 
     def test_stock_and_etf_pairs_use_alpaca_before_wolfram(self) -> None:
@@ -609,7 +609,7 @@ class PluginMarketPlanTests(unittest.TestCase):
 
         self.assertEqual(
             plan["capabilities"]["volatility-term-structure"]["providers"],
-            ["spreadsheet", "cboe"],
+            ["google-finance", "cboe", "spreadsheet"],
         )
         self.assertEqual(plan["capabilities"]["options-chain"]["providers"], [])
         self.assertEqual(plan["capabilities"]["btc-usd"]["providers"], [])

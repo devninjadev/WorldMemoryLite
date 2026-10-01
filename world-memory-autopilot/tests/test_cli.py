@@ -401,6 +401,7 @@ class CliMappingTests(unittest.TestCase):
         result = run_cli("--help")
         self.assertEqual(result.returncode, 0, result.stderr)
         expected_commands = (
+            "entity-extension-plan",
             "validate-registry",
             "resolve-registry-discovery",
             "schema",
@@ -409,6 +410,8 @@ class CliMappingTests(unittest.TestCase):
             "resolve-report-view",
             "normalize-story-view",
             "validate-llm-plan",
+            "complete-entity-review",
+            "prepare-report",
             "render-scheduled-prompt",
             "collect-feeds",
             "read-feed-page",
@@ -606,6 +609,7 @@ class CliMappingTests(unittest.TestCase):
             "knownStoryIds": [STORY_ID],
             "evidenceItemIds": ["item-1"],
             "expectedReportType": "world-memory",
+            "entityContext": {"policy": "disabled", "readiness": "disabled", "reason": "Core CLI test with entity extension disabled"},
         }
         result = self.assert_success_object(
             run_cli("validate-llm-plan", stdin=json.dumps(request))
@@ -617,7 +621,7 @@ class CliMappingTests(unittest.TestCase):
             run_cli("render-scheduled-prompt", stdin=json.dumps(REGISTRY))
         )
         self.assertEqual(set(result), {"prompt"})
-        self.assertIn("<world_memory_registry>", result["prompt"])
+        self.assertIn("<world_memory_config>", result["prompt"])
         self.assertIn('"schemaVersion":"notion-native-v2"', result["prompt"])
         for key, database_id in DATABASE_IDS.items():
             with self.subTest(key=key):
@@ -696,7 +700,7 @@ class CliMappingTests(unittest.TestCase):
         )
         self.assertEqual(
             result["capabilities"]["treasury-yield-curve"]["providers"][:2],
-            ["wolfram-language", "wolfram-alpha"],
+            ["wolfram-language", "treasury-csv"],
         )
         self.assertTrue(
             result["capabilities"]["treasury-yield-curve"][
@@ -998,7 +1002,7 @@ class CliMappingTests(unittest.TestCase):
                                 "stage": "",
                                 "validationEnvelope": None,
                             }
-                            for provider in ("wolfram-alpha", "fred-batch", "fred-page")
+                            for provider in ("fred-batch", "fred-page")
                         ],
                     ],
                 }
@@ -1137,8 +1141,8 @@ class CliMappingTests(unittest.TestCase):
             run_cli("validate-market-observation", stdin=json.dumps(first))
         )["observation"]
         second = treasury_payload()
-        second["candidate"]["provider"] = "wolfram-alpha"
-        second["candidate"]["sourceLocator"]["tool"] = "Wolfram Alpha"
+        second["candidate"]["provider"] = "treasury-csv"
+        second["candidate"]["sourceLocator"] = {"kind": "url", "url": "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/2026/all"}
         _bind_structured_payload(second, "ev-curve")
         second_observation = self.assert_success_object(
             run_cli("validate-market-observation", stdin=json.dumps(second))
@@ -1154,7 +1158,7 @@ class CliMappingTests(unittest.TestCase):
                 "validationEnvelope": first,
             },
             {
-                "provider": "wolfram-alpha",
+                "provider": "treasury-csv",
                 "status": "ok",
                 "values": {stable_key: second_observation},
                 "error": "",
@@ -1170,7 +1174,7 @@ class CliMappingTests(unittest.TestCase):
                     "stage": "",
                     "validationEnvelope": None,
                 }
-                for provider in ("treasury-csv", "treasury-xml")
+                for provider in ("treasury-xml",)
             ],
         ]
         collected = self.assert_success_object(
@@ -1193,7 +1197,7 @@ class CliMappingTests(unittest.TestCase):
         )
         self.assertEqual(collected["values"][stable_key], second_observation)
         self.assertEqual(
-            collected["values"][stable_key]["provider"], "wolfram-alpha"
+            collected["values"][stable_key]["provider"], "treasury-csv"
         )
 
     def test_vix_fallback_preserves_earlier_components_with_per_component_provenance(self) -> None:
@@ -1222,6 +1226,8 @@ class CliMappingTests(unittest.TestCase):
         )["observation"]
         stable_key = "VIX.term-structure"
         attempts = [
+            {"provider": "google-finance", "status": "error", "values": {},
+             "error": "market_provider_error", "stage": "fetch", "validationEnvelope": None},
             {
                 "provider": "wolfram-language",
                 "status": "partial",
@@ -1247,7 +1253,7 @@ class CliMappingTests(unittest.TestCase):
                     "stage": "",
                     "validationEnvelope": None,
                 }
-                for provider in ("spreadsheet", "cboe")
+                for provider in ("cboe", "spreadsheet")
             ],
         ]
         collected = self.assert_success_object(

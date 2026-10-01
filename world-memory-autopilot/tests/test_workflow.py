@@ -7,6 +7,7 @@ import unittest
 from world_memory.feed import FEEDS, FeedOutcome
 from world_memory.market import MarketSnapshot, ProviderResult
 from world_memory.workflow import WriteOutcome, build_user_result, resolve_write_response
+from tests.test_required_entity_completion import completion
 
 
 COLLECTION_ID = "77777777-7777-4777-8777-777777777777"
@@ -331,6 +332,7 @@ class UserResultTests(unittest.TestCase):
             story_created=1,
             story_updated=2,
             changes_created=3,
+            entity_completion=completion(),
         )
 
         self.assertEqual(result["status"], "completed")
@@ -441,6 +443,7 @@ class UserResultTests(unittest.TestCase):
             report_outcome=WriteOutcome("report", "confirmed", REPORT_ID, ""),
             feed_outcomes=ALL_OK_OUTCOMES,
             market=MARKET_OK,
+            entity_completion=completion(),
         )
 
         self.assertEqual(result["status"], "completed")
@@ -685,6 +688,7 @@ class UserResultTests(unittest.TestCase):
             ),
             feed_outcomes=ALL_OK_OUTCOMES,
             market=MARKET_OK,
+            entity_completion=completion(),
         )
 
         self.assertEqual(result["status"], "completed")

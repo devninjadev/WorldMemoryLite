@@ -5,7 +5,7 @@ description: Run, install, or maintain a scheduled World Memory workspace throug
 
 # World Memory Autopilot
 
-Version: `0.24.1`
+Version: `0.24.2`
 
 Maintain an evolving investment research notebook in the registered Notion workspace.
 Accept ordinary factual reporting from reputable outlets as fact with source links.

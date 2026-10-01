@@ -13,7 +13,7 @@ from typing import Iterable
 import zipfile
 
 
-VERSION = "0.24.1"
+VERSION = "0.24.2"
 PACKAGE_NAME = "world-memory-autopilot"
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PACKAGE = PROJECT_ROOT / PACKAGE_NAME
@@ -58,6 +58,8 @@ _REQUIRED_RELATIVE_FILES = frozenset(
         "scripts/world_memory/windows.py",
         "scripts/world_memory/views.py",
         "scripts/world_memory/workflow.py",
+        "tests/test_current_market_plan.py",
+        "tests/test_scheduled_configuration.py",
         "tests/test_financialjuice_feed.py",
         "tests/test_required_entity_completion.py",
     }
@@ -130,7 +132,7 @@ def _validate_content(package_dir: Path, relative_files: Iterable[Path]) -> None
         text = (package_dir / relative).read_text(encoding="utf-8")
         if any(marker in text for marker in _LEGACY_MARKERS):
             raise _safe_error("legacy-runtime-marker")
-        # The two cloud-packaged regression files contain synthetic Notion IDs.
+        # Packaged regression fixtures contain synthetic Notion IDs.
         if (relative.parts[0] != "tests" and _UUID.search(text)) or any(pattern.search(text) for pattern in _SECRETS):
             raise _safe_error("sensitive-content")
 

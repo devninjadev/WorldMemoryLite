@@ -1,5 +1,17 @@
 # Changes
 
+## 0.24.2 — 2026-10-01
+
+- Remove obsolete search-v2, self-contained prompt wording, historical document layout and release-version snapshot tests. Detailed policy is owned by the installed references.
+- Remove the test for the retired Collection pagination helper; keep single-Collection rendering and all existing URL, Markdown, property and relation validation checks.
+- Update existing plan-validation, Report payload and completion fixtures with explicit entity context/review outcomes. Do not relax required-review gates or change runtime defaults.
+- Update provider expectations and fallback examples for Google Finance, TradingView and official Treasury/FRED routes. Preserve partial VIX component provenance and atomic Treasury fallback checks.
+- Add independent configuration-transport and current-provider regression files to the installable package; retain package reference and SVG safety checks without coupling them to editorial wording.
+- Align the standalone VERSION file with the SKILL.md version label.
+- Make the developer test directory a standard Python package so unittest discovery and test fixture imports use the same modules.
+
+Validation: 335 World Memory development tests, 13 release/package tests and 34 independently packaged regressions pass. The 42-file archive is deterministic and matches the installed cloud skill. Runtime Python and operational instructions are unchanged apart from the version label. Live connector, Notion write and scheduled-run behavior are outside this offline maintenance check.
+
 ## 0.24.1 — 2026-10-01
 
 - Sync the 40 files from the ChatGPT cloud skill download without changing their contents.
